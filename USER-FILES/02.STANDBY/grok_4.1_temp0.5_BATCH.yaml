@@ -1,0 +1,71 @@
+# =============================================================================
+# PROFILE METADATA
+# =============================================================================
+metadata:
+  profile_name: grok_4.1_temp0.5_BATCH
+  description: Fast Grok model from xAI
+  created: '2026-03-06'
+  version: '1.0'
+
+# =============================================================================
+# MODEL CONFIGURATION
+# =============================================================================
+# Full OpenRouter endpoint - change this to use a different model
+model:
+  endpoint: x-ai/grok-4.1-fast
+  nickname: grok
+  capabilities:
+    context_window: 131072
+    supports_batching: true
+    supports_caching: false
+    supports_thinking: false
+
+# =============================================================================
+# PRICING (per million tokens)
+# =============================================================================
+# Update these values if OpenRouter pricing changes
+pricing:
+  real_time:
+    input: 2.0
+    output: 10.0
+  batch:
+    input: 1.0
+    output: 5.0
+
+# =============================================================================
+# PROCESSING MODE
+# =============================================================================
+# batch_mode: true = 50% discount, results within 24 hours
+# batch_mode: false = real-time processing, standard pricing
+batch_mode: true
+
+# =============================================================================
+# MODEL PARAMETERS
+# =============================================================================
+# Alternative temperatures:
+# temperature: 0.3  # More deterministic, less creative
+# temperature: 0.7  # More creative, less deterministic
+# temperature: 0.9  # High creativity
+#
+# Alternative max_tokens:
+# max_tokens: 4000   # Shorter responses, lower cost
+# max_tokens: 8000   # Current setting
+# max_tokens: 16000  # Longer responses, higher cost
+#
+parameters:
+  temperature: 0.5
+  max_tokens: 8000
+
+# =============================================================================
+# SYSTEM PROMPT (Optional)
+# =============================================================================
+# Uncomment to override the default system_prompt.md:
+# system_prompt: |
+#   You are a helpful assistant specialized in...
+#   Add your custom system prompt here.
+
+# =============================================================================
+# PROFILE STATUS
+# =============================================================================
+# Set to false to disable this profile
+enabled: true

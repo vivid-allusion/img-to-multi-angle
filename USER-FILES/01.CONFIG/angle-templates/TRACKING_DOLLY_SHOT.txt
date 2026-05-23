@@ -1,0 +1,1 @@
+The camera moves smoothly alongside a character in motion, fluid movement. Tracking dolly shot. Flowing movement allows the capture of dynamic action and spatial context.

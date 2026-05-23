@@ -1,0 +1,71 @@
+# =============================================================================
+# PROFILE METADATA
+# =============================================================================
+metadata:
+  profile_name: opus_4.6_temp0.7_REAL-TIME
+  description: Most capable Claude model for complex reasoning
+  created: '2026-03-06'
+  version: '1.0'
+
+# =============================================================================
+# MODEL CONFIGURATION
+# =============================================================================
+# Full OpenRouter endpoint - change this to use a different model
+model:
+  endpoint: anthropic/claude-opus-4.6
+  nickname: opus
+  capabilities:
+    context_window: 200000
+    supports_batching: true
+    supports_caching: false
+    supports_thinking: false
+
+# =============================================================================
+# PRICING (per million tokens)
+# =============================================================================
+# Update these values if OpenRouter pricing changes
+pricing:
+  real_time:
+    input: 7.5
+    output: 37.5
+  batch:
+    input: 3.75
+    output: 18.75
+
+# =============================================================================
+# PROCESSING MODE
+# =============================================================================
+# batch_mode: true = 50% discount, results within 24 hours
+# batch_mode: false = real-time processing, standard pricing
+batch_mode: false
+
+# =============================================================================
+# MODEL PARAMETERS
+# =============================================================================
+# Alternative temperatures:
+# temperature: 0.3  # More deterministic, less creative
+# temperature: 0.5  # Balanced creativity
+# temperature: 0.9  # High creativity
+#
+# Alternative max_tokens:
+# max_tokens: 4000   # Shorter responses, lower cost
+# max_tokens: 8000   # Current setting
+# max_tokens: 16000  # Longer responses, higher cost
+#
+parameters:
+  temperature: 0.7
+  max_tokens: 8000
+
+# =============================================================================
+# SYSTEM PROMPT (Optional)
+# =============================================================================
+# Uncomment to override the default system_prompt.md:
+# system_prompt: |
+#   You are a helpful assistant specialized in...
+#   Add your custom system prompt here.
+
+# =============================================================================
+# PROFILE STATUS
+# =============================================================================
+# Set to false to disable this profile
+enabled: true
