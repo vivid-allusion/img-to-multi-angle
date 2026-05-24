@@ -14,33 +14,8 @@ class ConfigurationError(TextProcessorError):
     pass
 
 
-class ProfileError(ConfigurationError):
-    """Raised when there's an issue with profile loading or validation."""
-    pass
-
-
 class APIAuthenticationError(TextProcessorError):
     """Raised when API authentication fails."""
-    pass
-
-
-class BatchProcessingError(TextProcessorError):
-    """Raised when batch processing encounters an error."""
-    pass
-
-
-class ValidationError(TextProcessorError):
-    """Raised when text or response validation fails."""
-    pass
-
-
-class ResponseValidationError(ValidationError):
-    """Raised when API response validation fails."""
-    pass
-
-
-class CostCalculationError(TextProcessorError):
-    """Raised when cost calculation encounters an error."""
     pass
 
 

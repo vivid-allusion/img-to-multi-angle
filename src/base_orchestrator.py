@@ -9,7 +9,6 @@ from openrouter import OpenRouter
 from loguru import logger
 
 from .auth import get_api_key
-from .cost_calculator import UsageStats
 
 
 class BaseOrchestrator(ABC):
@@ -23,7 +22,6 @@ class BaseOrchestrator(ABC):
             config: Configuration dictionary
         """
         self.config = config
-        self.usage_stats = UsageStats()
 
     def setup_processing(self, output_dir: Path, dry_run: bool = False) -> Tuple[Optional[OpenRouter], Dict[str, Any]]:
         """

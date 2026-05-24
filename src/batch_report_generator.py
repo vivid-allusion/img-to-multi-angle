@@ -67,19 +67,33 @@ class BatchReportGenerator:
 
 """
         
+    def _sum_token_usage(self, results: Dict[str, Any], token_type: str) -> int:
+        """Sum token usage across successful results.
+
+        Args:
+            results: Parsed results dictionary
+            token_type: 'input_tokens' or 'output_tokens'
+
+        Returns:
+            Total token count
+        """
+        return sum(
+            s.get("_api_usage", s.get("usage", {})).get(token_type, 0)
+            for s in results["succeeded"]
+        )
+
     def _create_token_usage_section(self, results: Dict[str, Any]) -> str:
         """Create token usage statistics section."""
         if not results["succeeded"]:
             return "## Token Usage\n*No successful results to analyze*\n\n"
-            
-        # Check for _api_usage (from batch results) or usage (from real-time)
-        total_input = sum(s.get("_api_usage", s.get("usage", {})).get("input_tokens", 0) for s in results["succeeded"])
-        total_output = sum(s.get("_api_usage", s.get("usage", {})).get("output_tokens", 0) for s in results["succeeded"])
+
+        total_input = self._sum_token_usage(results, "input_tokens")
+        total_output = self._sum_token_usage(results, "output_tokens")
         count = len(results['succeeded'])
-        
+
         avg_input = total_input / count if count > 0 else 0
         avg_output = total_output / count if count > 0 else 0
-        
+
         return f"""## Token Usage
 - **Total Input Tokens**: {total_input:,}
 - **Total Output Tokens**: {total_output:,}
@@ -87,15 +101,14 @@ class BatchReportGenerator:
 - **Average Output per File**: {avg_output:.0f}
 
 """
-        
+
     def _create_cost_analysis_section(self, results: Dict[str, Any]) -> str:
         """Create cost analysis section with batch pricing."""
         if not results["succeeded"]:
             return "## Cost Analysis\n*No successful results to analyze*\n\n"
-            
-        # Check for _api_usage (from batch results) or usage (from real-time)
-        total_input = sum(s.get("_api_usage", s.get("usage", {})).get("input_tokens", 0) for s in results["succeeded"])
-        total_output = sum(s.get("_api_usage", s.get("usage", {})).get("output_tokens", 0) for s in results["succeeded"])
+
+        total_input = self._sum_token_usage(results, "input_tokens")
+        total_output = self._sum_token_usage(results, "output_tokens")
         
         # Get batch pricing using model resolver
         from .cost_calculator import calculate_cost

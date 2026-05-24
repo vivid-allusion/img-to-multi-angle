@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Data models and classes for parameter consolidation."""
+"""Data models for multi-angle MD processing."""
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Optional
 from pathlib import Path
 
 
@@ -15,34 +15,6 @@ class UsageData:
     cache_read_tokens: int = 0
     filename: Optional[str] = None
     model: Optional[str] = None
-
-
-@dataclass
-class ConfigSource:
-    """Track configuration sources for validation."""
-    field: str
-    value: Any
-    source_file: Path
-    line_number: Optional[int] = None
-    is_override: bool = False
-
-
-@dataclass
-class ReportContext:
-    """Context for report generation."""
-    output_dir: Path
-    stats: Dict[str, Any]
-    metadata: Dict[str, Any]
-    duration: float
-
-
-@dataclass
-class BatchRequest:
-    """Batch request information."""
-    custom_id: str
-    params: Dict[str, Any]
-    filename: str
-    content: str
 
 
 @dataclass

@@ -8,34 +8,24 @@ from typing import Dict, Any, List
 from loguru import logger
 from openrouter import OpenRouter
 from .batch_formatter import BatchStatusFormatter
+from .config import require_batch_config
 
 
 class BatchMonitor:
     """Monitors batch processing status and completion."""
-    
+
     def __init__(self, client: OpenRouter, config: Dict[str, Any]):
-        """
-        Initialize batch monitor.
-        
+        """Initialize batch monitor.
+
         Args:
             client: OpenRouter API client
             config: Configuration dictionary with batch settings
         """
         self.client = client
-        if "batch_config" not in config:
-            raise ValueError("Missing 'batch_config' in configuration")
-        self.batch_config = config["batch_config"]
+        self.batch_config = require_batch_config(config)
         
     def check_batch_status(self, batch_id: str) -> Dict[str, Any]:
-        """
-        Check the status of a batch.
-        
-        Args:
-            batch_id: The batch ID to check
-            
-        Returns:
-            Dictionary with batch status information
-        """
+        """Check the status of a batch."""
         try:
             batch = self.client.chat.completions.batch.retrieve(batch_id)
             
@@ -69,16 +59,7 @@ class BatchMonitor:
             raise
             
     def wait_for_completion(self, batch_id: str, verbose: bool = True) -> Dict[str, Any]:
-        """
-        Wait for a batch to complete processing.
-        
-        Args:
-            batch_id: The batch ID to monitor
-            verbose: Whether to print progress updates
-            
-        Returns:
-            Final batch status information
-        """
+        """Wait for a batch to complete processing."""
         check_interval = self.batch_config["check_interval_minutes"] * 60
         max_wait_hours = self.batch_config["max_wait_hours"]
         max_wait_seconds = max_wait_hours * 3600
@@ -86,7 +67,7 @@ class BatchMonitor:
         start_time = time.time()
         last_status = None
         
-        logger.info(f"🔄 Monitoring batch {batch_id}")
+        logger.info(f"Monitoring batch {batch_id}")
         logger.info(f"Check interval: {check_interval/60:.1f} minutes")
         logger.info(f"Max wait time: {max_wait_hours} hours")
         
@@ -99,13 +80,13 @@ class BatchMonitor:
                     last_status = status["processing_status"]
                     
                 if status["is_complete"]:
-                    logger.success(f"✅ Batch {batch_id} completed!")
+                    logger.success(f"Batch {batch_id} completed!")
                     BatchStatusFormatter.log_completion_stats(status, start_time)
                     return status
                     
                 elapsed = time.time() - start_time
                 if elapsed > max_wait_seconds:
-                    logger.warning(f"⏱️ Batch monitoring timed out after {max_wait_hours} hours")
+                    logger.warning(f"Batch monitoring timed out after {max_wait_hours} hours")
                     logger.info("Batch may still be processing. Check status later.")
                     return status
                     
@@ -124,15 +105,7 @@ class BatchMonitor:
                 time.sleep(check_interval)
                 
     def list_batches(self, limit: int = 20) -> List[Dict[str, Any]]:
-        """
-        List recent batches.
-        
-        Args:
-            limit: Maximum number of batches to return
-            
-        Returns:
-            List of batch information dictionaries
-        """
+        """List recent batches."""
         try:
             batches = []
             
@@ -150,52 +123,3 @@ class BatchMonitor:
         except Exception as e:
             logger.error(f"Error listing batches: {e}")
             return []
-            
-    def cancel_batch(self, batch_id: str) -> bool:
-        """
-        Cancel an in-progress batch.
-        
-        Args:
-            batch_id: The batch ID to cancel
-            
-        Returns:
-            True if cancellation was successful
-        """
-        try:
-            logger.info(f"Canceling batch {batch_id}...")
-            batch = self.client.chat.completions.batch.cancel(batch_id)
-            
-            if batch.status in ["cancelling", "cancelled"]:
-                logger.success(f"✅ Batch {batch_id} cancellation initiated")
-                return True
-            else:
-                logger.warning(f"Batch status after cancel: {batch.status}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error canceling batch: {e}")
-            return False
-            
-    def delete_batch(self, batch_id: str) -> bool:
-        """
-        Delete a completed batch.
-        
-        Args:
-            batch_id: The batch ID to delete
-            
-        Returns:
-            True if deletion was successful
-        """
-        try:
-            logger.info(f"Deleting batch {batch_id}...")
-            deleted = self.client.chat.completions.batch.delete(batch_id)
-            
-            if hasattr(deleted, 'id'):
-                logger.success(f"✅ Batch {batch_id} deleted")
-                return True
-            else:
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error deleting batch: {e}")
-            return False

@@ -1,123 +1,114 @@
-#!/usr/bin/env python3
-"""Dry run cost estimation without making actual API calls."""
+"""Dry run cost estimation for multi-angle processing."""
 
 from typing import Dict, Any, List
 from pathlib import Path
 from openrouter import OpenRouter
 from loguru import logger
 
-from .cost_calculator import UsageStats
 from .dry_run_report_formatter import DryRunReportFormatter
+from .md_input_parser import parse_md_file
+from .angle_loader import load_angle_templates
+from .api_client import build_system_prompt_with_scene
 
 
 class DryRunEstimator:
     """Estimates costs without making actual API calls."""
-    
+
     def __init__(self, config: Dict[str, Any], api_key: str = "sk-dummy-for-counting"):
-        """
-        Initialize the dry run estimator.
-        
+        """Initialize the dry run estimator.
+
         Args:
             config: Configuration dictionary
             api_key: API key (can be dummy for token counting only)
         """
         self.config = config
         self.client = OpenRouter(api_key=api_key)
-        self.usage_stats = UsageStats()
-        
-    def estimate_txt_cost(self, txt_content: str) -> Dict[str, Any]:
-        """
-        Estimate cost for a single TXT file.
+
+    def estimate_md_file_cost(
+        self, md_path: Path, angles: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """Estimate cost for one MD file across all angles.
 
         Args:
-            txt_content: TXT content to estimate
+            md_path: Path to MD file
+            angles: Dict of angle_name -> template content
 
         Returns:
             Dictionary with token counts and estimated cost
         """
-        input_tokens = self._count_txt_tokens(txt_content)
-        
+        dataset_a, dataset_b, dataset_c = parse_md_file(md_path)
+
+        system_prompt = build_system_prompt_with_scene(self.config["system_prompt"], dataset_a)
+        system_tokens = len(system_prompt) // 4
+
+        angle_tokens = sum(len(t) // 4 for t in angles.values())
+
         if "avg_output_tokens" not in self.config:
-            raise ValueError("Missing 'avg_output_tokens' in configuration - must be defined in USER-FILES/01.CONFIG/")
-        avg_output_tokens = self.config["avg_output_tokens"]
-        
-        usage_data = {
-            'input_tokens': input_tokens,
-            'output_tokens': avg_output_tokens
+            raise ValueError("Missing 'avg_output_tokens' in configuration")
+        avg_output = self.config["avg_output_tokens"]
+
+        total_input = system_tokens + angle_tokens
+        total_output = avg_output * len(angles)
+
+        return {
+            "input_tokens": total_input,
+            "output_tokens": total_output,
+            "num_angles": len(angles),
         }
 
-        return usage_data
-
-    def _count_txt_tokens(self, txt_content: str) -> int:
-        """
-        Count tokens for TXT content using character estimation.
+    def estimate_all_md_files(self, md_files: List[Path]) -> Dict[str, Any]:
+        """Estimate costs for all MD files.
 
         Args:
-            txt_content: TXT to count tokens for
-
-        Returns:
-            Number of tokens (estimated)
-        """
-        try:
-            if "system_prompt" not in self.config:
-                raise ValueError("Missing 'system_prompt' in configuration")
-            system = self.config["system_prompt"]
-            
-            total_chars = len(system) + len(txt_content)
-            estimated_tokens = total_chars // 4
-            return estimated_tokens
-        except Exception as e:
-            logger.warning(f"Failed to count tokens: {e}")
-            return len(txt_content) // 4
-
-    def estimate_all_txts(self, txt_files: List[Path]) -> Dict[str, Any]:
-        """
-        Estimate costs for all TXT files.
-
-        Args:
-            txt_files: List of TXT file paths
+            md_files: List of MD file paths
 
         Returns:
             Dictionary with estimation results
         """
+        angle_dir = Path("USER-FILES/01.CONFIG/angle-templates")
+        angles = load_angle_templates(angle_dir)
+
         results = {
-            'estimated_files': 0,
-            'total_estimated_cost': 0.0,
-            'file_estimates': []
+            "estimated_files": 0,
+            "total_estimated_cost": 0.0,
+            "total_angles": 0,
+            "file_estimates": [],
         }
 
-        for txt_file in txt_files:
+        for md_file in md_files:
             try:
-                content = txt_file.read_text(encoding='utf-8')
-                usage_data = self.estimate_txt_cost(content)
+                usage_data = self.estimate_md_file_cost(md_file, angles)
 
                 from .cost_calculator import calculate_cost
+
                 cost = calculate_cost(
                     usage_data,
                     self.config,
-                    self.config['model'],
-                    self.config['batch_mode']
+                    self.config["model"],
+                    self.config["batch_mode"],
                 )
 
-                results['file_estimates'].append({
-                    'filename': txt_file.name,
-                    'input_tokens': usage_data['input_tokens'],
-                    'output_tokens': usage_data['output_tokens'],
-                    'estimated_cost': cost
-                })
+                results["file_estimates"].append(
+                    {
+                        "filename": md_file.name,
+                        "input_tokens": usage_data["input_tokens"],
+                        "output_tokens": usage_data["output_tokens"],
+                        "num_angles": usage_data["num_angles"],
+                        "estimated_cost": cost,
+                    }
+                )
 
-                results['estimated_files'] += 1
-                results['total_estimated_cost'] += cost
+                results["estimated_files"] += 1
+                results["total_angles"] += usage_data["num_angles"]
+                results["total_estimated_cost"] += cost
 
             except Exception as e:
-                logger.error(f"Error estimating {txt_file}: {e}")
+                logger.error(f"Error estimating {md_file}: {e}")
 
         return results
-    
-    
+
     def generate_cost_report(self, results: Dict[str, Any], output_dir: Path) -> Path:
-        """
-        Generate a markdown cost estimation report.
+        """Generate a markdown cost estimation report.
 
         Args:
             results: Estimation results

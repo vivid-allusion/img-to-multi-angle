@@ -4,6 +4,10 @@ Here is the original image I want you to look at:
 
 [Dataset B — Original image]
 
+Here are the character sheet references for visual consistency:
+
+[Dataset C — Character sheet reference URLs]
+
 Here is the angle template you need to rewrite:
 
 [Dataset D — Angle template text]

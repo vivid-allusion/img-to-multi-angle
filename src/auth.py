@@ -5,7 +5,6 @@ import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 from loguru import logger
 
 from .exceptions import APIAuthenticationError
@@ -29,7 +28,6 @@ def ensure_op_auth() -> None:
             capture_output=True,
             timeout=10
         )
-        logger.debug("1Password session is active.")
         return
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         logger.info("🔐 1Password session expired or not found. Signing in...")
@@ -54,8 +52,7 @@ def ensure_op_auth() -> None:
                     key, value = line.split("=", 1)
                     value = value.strip('"')
                     os.environ[key] = value
-                    logger.debug(f"Set 1Password session variable: {key}")
-        logger.info("✅ 1Password sign-in successful.")
+        logger.info("1Password sign-in successful.")
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         logger.error("❌ Failed to authenticate with 1Password.")
         if isinstance(e, subprocess.CalledProcessError) and e.stderr:

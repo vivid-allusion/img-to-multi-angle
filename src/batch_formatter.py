@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Batch status formatting and display utilities."""
 
-from typing import Dict, Any
 import time
+from typing import Dict, Any
 from loguru import logger
 
 
@@ -11,12 +11,7 @@ class BatchStatusFormatter:
 
     @staticmethod
     def log_status_change(status: Dict[str, Any], verbose: bool):
-        """Log batch status changes.
-
-        Args:
-            status: Batch status dictionary
-            verbose: Whether to show detailed output
-        """
+        """Log batch status changes."""
         if not verbose:
             return
 
@@ -27,30 +22,25 @@ class BatchStatusFormatter:
             total = status.get("request_count", 0)
             if total > 0:
                 progress = (completed / total) * 100
-                logger.info(f"📊 Processing: {completed}/{total} requests ({progress:.1f}%)")
+                logger.info(f"Processing: {completed}/{total} requests ({progress:.1f}%)")
             else:
-                logger.info("📊 Batch is processing...")
+                logger.info("Batch is processing...")
 
         elif processing_status == "canceling":
-            logger.warning("🚫 Batch is being canceled...")
+            logger.warning("Batch is being canceled...")
 
         elif processing_status == "canceled":
-            logger.warning("❌ Batch was canceled")
+            logger.warning("Batch was canceled")
 
         elif processing_status == "failed":
-            logger.error("❌ Batch failed")
+            logger.error("Batch failed")
 
         else:
             logger.info(f"Status: {processing_status}")
 
     @staticmethod
     def log_completion_stats(status: Dict[str, Any], start_time: float):
-        """Log batch completion statistics.
-
-        Args:
-            status: Final batch status
-            start_time: When monitoring started
-        """
+        """Log batch completion statistics."""
         elapsed = time.time() - start_time
         hours = elapsed / 3600
 
@@ -64,40 +54,13 @@ class BatchStatusFormatter:
             logger.info(f"Results: {succeeded}/{total} succeeded")
 
             if failed > 0:
-                logger.warning(f"⚠️ {failed} requests failed")
+                logger.warning(f"{failed} requests failed")
 
             success_rate = (succeeded / total) * 100 if total > 0 else 0
             logger.info(f"Success rate: {success_rate:.1f}%")
 
     @staticmethod
-    def format_batch_info(batch_info: Dict[str, Any]) -> str:
-        """Format batch information for display.
-
-        Args:
-            batch_info: Batch information dictionary
-
-        Returns:
-            Formatted string for display
-        """
-        status = batch_info.get("processing_status", "unknown")
-        created = batch_info.get("created_at", "unknown")
-        request_count = batch_info.get("request_count", 0)
-
-        return (f"Batch ID: {batch_info.get('id', 'unknown')}\n"
-                f"Status: {status}\n"
-                f"Created: {created}\n"
-                f"Requests: {request_count}")
-
-    @staticmethod
     def format_progress_message(check_interval: float, remaining_time: float) -> str:
-        """Format progress monitoring message.
-
-        Args:
-            check_interval: Seconds between checks
-            remaining_time: Seconds until timeout
-
-        Returns:
-            Formatted progress message
-        """
+        """Format progress monitoring message."""
         return (f"Next check in {check_interval/60:.1f} minutes. "
                 f"Timeout in {remaining_time/3600:.1f} hours.")

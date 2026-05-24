@@ -65,25 +65,35 @@ def create_venv(venv_path: Path) -> bool:
 
 
 def ensure_venv_and_run():
-    """Ensure we're in a virtual environment and run the app."""
+    """Ensure we're in a virtual environment and run the app.
+
+    If not in a venv, creates one, re-invokes this script within it,
+    and exits. If already in a venv, returns immediately so the
+    caller can proceed with dependency checks and main execution.
+    """
     if not in_virtualenv():
         venv_path = Path(__file__).parent / "venv"
         venv_python = venv_path / "bin" / "python"
-        
+
         if not venv_python.exists():
             if not create_venv(venv_path):
                 sys.exit(1)
-        
+
         result = subprocess.run([str(venv_python), __file__] + sys.argv[1:])
         sys.exit(result.returncode)
+    # Already in venv — return to caller for dependency check
+
+
+def _run_app():
+    """Check dependencies and run the application."""
+    if not check_dependencies():
+        if not install_requirements():
+            sys.exit(1)
+
+    from src.main import main
+    sys.exit(main())
 
 
 if __name__ == "__main__":
     ensure_venv_and_run()
-    
-    if not check_dependencies():
-        if not install_requirements():
-            sys.exit(1)
-    
-    from src.main import main
-    sys.exit(main())
+    _run_app()

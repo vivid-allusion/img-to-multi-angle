@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Configuration loader for scene-to-prompt converter."""
+"""Configuration loader for multi-angle MD processing."""
 
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -8,6 +8,23 @@ from loguru import logger
 
 from .profile_manager import load_profile, apply_profile_to_config
 from .config_validator import ConfigurationValidator
+
+
+def require_batch_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure batch_config is present in configuration.
+
+    Args:
+        config: Configuration dictionary
+
+    Returns:
+        The batch_config dictionary
+
+    Raises:
+        ValueError: If batch_config is missing
+    """
+    if "batch_config" not in config:
+        raise ValueError("Missing 'batch_config' in configuration")
+    return config["batch_config"]
 
 
 def _load_base_config(validator: ConfigurationValidator, base_path: Path) -> Dict[str, Any]:
@@ -152,50 +169,46 @@ def get_model_display_name(model_name: str, config: Optional[Dict[str, Any]] = N
     raise ValueError("Missing model_nickname in configuration")
 
 
-def get_output_directory(config: Optional[Dict[str, Any]] = None) -> Path:
-    """
-    Create and return timestamped output directory with profile information.
-    
-    Directory name format: YYMMDD_HHMMSS_model_tempX.X
-    
+def get_output_directory(config: Optional[Dict[str, Any]] = None, suffix: str = "") -> Path:
+    """Create and return timestamped output directory with profile information.
+
+    Directory name format: YYMMDD_HHMMSS_model_tempX.X[_suffix]
+
     Args:
         config: Optional configuration dictionary containing model and temperature
-    
+        suffix: Optional suffix appended to directory name (e.g., "MULTI-ANGLE-MD")
+
     Returns:
         Path to the output directory
     """
     from datetime import datetime
+
     timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
-    
-    # Build directory name components
+
     dir_parts = [timestamp]
-    
-    # Add model, batch mode, and temperature from config if available
+
     if config:
-        # Add model name if present (use display name if available)
         if "model" in config:
             model_name = config["model"]
             display_name = get_model_display_name(model_name, config)
             dir_parts.append(display_name)
-        
-        # Add batch mode status (BATCH or RT)
-        # Get batch_mode (must be in config after profile merge)
+
         batch_mode = config["batch_mode"]
         mode_str = "BATCH" if batch_mode else "RT"
         dir_parts.append(mode_str)
-        
-        # Add temperature if present (profile puts it at top level)
+
         temp_value = None
         if "temperature" in config:
             temp_value = config["temperature"]
-        
+
         if temp_value is not None:
-            # Format temperature as tempX.X
             dir_parts.append(f"temp{temp_value}")
-    
-    # Join all parts with underscores
+
+    if suffix:
+        dir_parts.append(suffix)
+
     dir_name = "_".join(dir_parts)
-    
+
     output_dir = Path("USER-FILES") / "05.OUTPUT" / dir_name
     output_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Created output directory: {output_dir}")

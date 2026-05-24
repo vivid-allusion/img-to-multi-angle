@@ -1,19 +1,17 @@
-#!/usr/bin/env python3
-"""Batch request builder for TXT processing operations."""
+"""Batch request builder for multi-angle processing operations."""
 
 from typing import Dict, Any, List
 from loguru import logger
-from .api_client import build_system_prompt
+from .api_client import build_system_prompt, build_system_prompt_with_scene
 
 MAX_CUSTOM_ID_LENGTH = 64
 
 
 class BatchRequestBuilder:
-    """Builds batch requests from TXT items."""
+    """Builds batch requests from MD items with multiple angles."""
 
     def __init__(self, config: Dict[str, Any], use_cache: bool = False):
-        """
-        Initialize the batch request builder.
+        """Initialize the batch request builder.
 
         Args:
             config: Configuration dictionary with model settings
@@ -23,94 +21,96 @@ class BatchRequestBuilder:
         self.use_cache = use_cache
         self.system_prompt = build_system_prompt(config)
 
-    def create_batch_requests(self, txt_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Convert TXT items to batch request format.
+    def create_batch_requests(
+        self, md_items: List[Dict[str, Any]], angles: Dict[str, str], um_template: str
+    ) -> List[Dict[str, Any]]:
+        """Convert MD items + angles to batch request format.
+
+        Each MD item generates one request per angle.
 
         Args:
-            txt_items: List of TXT dictionaries with 'filename' and 'content'
+            md_items: List of dicts with 'filename', 'dataset_a', 'dataset_b', 'dataset_c'
+            angles: Dict mapping angle_name -> template content
+            um_template: User message template string
 
         Returns:
             List of batch request objects
         """
+        from .user_message_template import render_user_message
+
         requests = []
 
-        for txt_item in txt_items:
+        for item in md_items:
             try:
-                request = self._build_single_request(txt_item)
-                if request:
-                    requests.append(request)
+                sys_prompt = build_system_prompt_with_scene(self.system_prompt, item['dataset_a'])
+
+                for angle_name, angle_text in angles.items():
+                    user_msg = render_user_message(
+                        um_template, item["dataset_b"], item["dataset_c"], angle_text
+                    )
+
+                    request = self._build_single_request(
+                        item["filename"], angle_name, sys_prompt, user_msg
+                    )
+                    if request:
+                        requests.append(request)
+
             except Exception as e:
-                logger.error(f"Error creating batch request for TXT {txt_item.get('filename')}: {e}")
+                logger.error(f"Error creating batch requests for {item.get('filename')}: {e}")
                 continue
 
-        logger.info(f"Created {len(requests)} batch requests from {len(txt_items)} TXT files")
+        logger.info(f"Created {len(requests)} batch requests from {len(md_items)} files x {len(angles)} angles")
+
         return requests
 
-    def _build_single_request(self, txt_item: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Build a single batch request from a TXT item.
-
-        Args:
-            txt_item: Dictionary with 'filename' and 'content'
-
-        Returns:
-            Batch request object
-
-        Raises:
-            ValueError: If required fields are missing
-        """
-        if 'content' not in txt_item:
-            raise ValueError("Missing 'content' in txt_item")
-        if 'filename' not in txt_item:
-            raise ValueError("Missing 'filename' in txt_item")
-
-        text_content = txt_item['content']
-        filename = txt_item['filename']
-
-        custom_id = self._create_custom_id(filename)
-
-        return {
-            "custom_id": custom_id,
-            "params": self._build_request_params(text_content)
-        }
-
-    def _create_custom_id(self, filename: str) -> str:
-        """
-        Create a valid custom_id from a filename.
+    def _build_single_request(
+        self, filename: str, angle_name: str, system_prompt: str, user_content: str
+    ) -> Dict[str, Any]:
+        """Build a single batch request.
 
         Args:
             filename: Original filename
+            angle_name: Angle template name
+            system_prompt: System prompt (includes Dataset A)
+            user_content: Rendered user message
 
         Returns:
-            Valid custom_id (alphanumeric, underscore, hyphen only)
+            Batch request object
         """
-        safe_filename = ''.join(c if c.isalnum() or c in '-_' else '_' for c in filename)
-        return f"txt_{safe_filename}"[:MAX_CUSTOM_ID_LENGTH]
+        custom_id = self._create_custom_id(filename, angle_name)
 
-    def _build_request_params(self, text_content: str) -> Dict[str, Any]:
-        """
-        Build request parameters for API call.
-
-        Args:
-            text_content: The text to process
-
-        Returns:
-            Request parameters dictionary
-        """
         if self.use_cache:
-            system_param = [{
-                "type": "text",
-                "text": self.system_prompt,
-                "cache_control": {"type": "ephemeral"}
-            }]
+            system_param = [
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
         else:
-            system_param = self.system_prompt
+            system_param = system_prompt
 
         return {
-            "model": self.config["model"],
-            "max_tokens": self.config["max_tokens"],
-            "temperature": self.config["temperature"],
-            "messages": [{"role": "user", "content": text_content}],
-            "system": system_param
+            "custom_id": custom_id,
+            "params": {
+                "model": self.config["model"],
+                "max_tokens": self.config["max_tokens"],
+                "temperature": self.config["temperature"],
+                "messages": [{"role": "user", "content": user_content}],
+                "system": system_param,
+            },
         }
+
+    def _create_custom_id(self, filename: str, angle_name: str) -> str:
+        """Create a valid custom_id from filename and angle name.
+
+        Args:
+            filename: Original filename
+            angle_name: Angle template name
+
+        Returns:
+            Valid custom_id
+        """
+        safe_filename = "".join(c if c.isalnum() or c in "-_" else "_" for c in filename)
+        safe_angle = "".join(c if c.isalnum() or c in "-_" else "_" for c in angle_name)
+        return f"md_{safe_filename}_{safe_angle}"[:MAX_CUSTOM_ID_LENGTH]
