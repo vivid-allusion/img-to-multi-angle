@@ -5,6 +5,24 @@ from typing import Dict, List
 from loguru import logger
 
 
+def copy_raw_md_file(input_path: Path, output_dir: Path) -> Path:
+    """Copy raw MD file verbatim to output directory.
+
+    Used when a file has zero checked angles.
+
+    Args:
+        input_path: Path to input MD file
+        output_dir: Output directory
+
+    Returns:
+        Path to copied file
+    """
+    dest = output_dir / input_path.name
+    dest.write_text(input_path.read_text(encoding="utf-8"), encoding="utf-8")
+    logger.info(f"Copied raw MD file: {dest.relative_to(output_dir)}")
+    return dest
+
+
 def save_angle_outputs(
     output_dir: Path,
     input_name: str,

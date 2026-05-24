@@ -158,13 +158,20 @@ class ProcessCommand:
 
         md_items = []
         for md_file in md_files:
-            dataset_a, dataset_b, dataset_c = parse_md_file(md_file)
+            parsed = parse_md_file(md_file)
             md_items.append({
                 "filename": md_file.stem,
-                "dataset_a": dataset_a,
-                "dataset_b": dataset_b,
-                "dataset_c": dataset_c,
+                "dataset_a": parsed.scene,
+                "dataset_b": parsed.original_image,
+                "dataset_c": parsed.ref_images,
+                "checked_angles": parsed.checked_angles,
+                "checkbox_lines": parsed.all_checkbox_lines,
             })
+
+        from .checkbox_validator import validate_checkboxes
+        available_angles = set(angles.keys())
+        for item in md_items:
+            validate_checkboxes(item["checkbox_lines"], available_angles, item["filename"])
 
         logger.info(f"Loaded {len(md_items)} MD files, {len(angles)} angles")
 

@@ -59,6 +59,20 @@ python3 -m src.main --cost-only        # OK ($0.0131 for 1 file x 17 angles)
 - 0 syntax errors, 0 unused imports, 0 TODO/FIXME, 0 print() in src/
 - Report: `USER-FILES/07.TEMP/260523_cleanup_report.md`
 
+### Checkbox Selection Feature (2026-05-24) — ✅ COMPLETE
+- Added per-file angle selection via markdown checkboxes in input MD files
+- New module: `checkbox_validator.py` (68 lines) — strict validation, hard-fail on missing/mismatched labels
+- `md_input_parser.py` rewritten with `ParsedMdInput` dataclass (156 lines); normalizes spaces→underscores
+- `multi_angle_orchestrator.py` — processes only checked angles, skips unchecked files (copies raw MD to output)
+- `multi_angle_output_saver.py` — added `copy_raw_md_file()` for unchecked passthrough
+- `batch_request_builder.py` — per-file `checked_angles` filtering
+- `cli_handler.py` — batch submission validates checkboxes
+- `dry_run_estimator.py` — cost estimation uses checked angles only
+- `angle_loader.py` — added `get_available_angle_names()` helper
+- README.md updated with checkbox workflow documentation
+- Input files without checkbox section fail with error suggesting `add-multi-checkboxes` tool
+- All-unchecked files are copied verbatim to output directory (no API calls)
+
 ---
 
 ---
@@ -69,10 +83,10 @@ python3 -m src.main --cost-only        # OK ($0.0131 for 1 file x 17 angles)
 Multi-Angle MD Processor — transforms Markdown files into multi-angle reframed outputs using OpenRouter API.
 
 ## Architecture
-- **30 Python files** in `src/`, **3,586 total lines**
+- **31 Python files** in `src/`, **3,832 total lines**
 - Entry point: `python -m src.main`
 - Config: `USER-FILES/01.CONFIG/openrouter_config.yaml` + `USER-FILES/03.PROFILES/*.yaml`
-- Input: `USER-FILES/04.INPUT/*.md`
+- Input: `USER-FILES/04.INPUT/*.md` (must include checkbox section)
 - Output: `USER-FILES/05.OUTPUT/{timestamp}_{model}_{mode}_MULTI-ANGLE-MD/`
 
 ## Key Modules
@@ -102,11 +116,12 @@ Multi-Angle MD Processor — transforms Markdown files into multi-angle reframed
 - 0 syntax errors
 - 0 unused imports
 - 0 functions with cyclomatic complexity >10
-- 0 files exceeding 250 lines
+- 1 file over 250-line soft limit: `cli_handler.py` (263 lines)
+- 0 files over 400-line hard limit
 - 0 TODO/FIXME comments
 - 0 logger.debug() statements
 - 0 print() statements in src/
-- ~972 lines removed from peak (~21% reduction from 4,558 → 3,586)
+- ~972 lines removed from peak (~21% reduction from 4,558 → 3,586; +246 from checkbox feature → 3,832)
 
 ## Future Considerations
 - 8 functions have exactly 5 parameters (borderline acceptable, not blocking)

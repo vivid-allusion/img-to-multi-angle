@@ -55,7 +55,9 @@ Alternatively, if you have [1Password CLI](https://developer.1password.com/docs/
 Place `.md` files in `USER-FILES/04.INPUT/`. Each file must have:
 
 - **Line 1**: Scene description — narrative text describing characters, environment, and which reference images correspond to which characters
-- **Subsequent lines**: Markdown image links — first image = main scene image, remaining = character reference sheets
+- **Line 2**: Original image — first Markdown image link (the main scene image)
+- **Checkbox section**: One checkbox per available angle (see below for format)
+- **Remaining lines**: Reference images — character reference sheet Markdown image links
 
 Example (`prompt01.md`):
 
@@ -63,9 +65,43 @@ Example (`prompt01.md`):
 Anchorage bar. Close on a Tlingit bartender and a Hasidic Jew sitting across one another inside a dimly lit, early 20th-century tavern. On the left, the large-framed bartender with long dark hair and a thick beard leans over the wooden counter. To the right, the Hasidic man, featuring a graying beard, payot, a black wide-brimmed hat, and a weathered dark coat, reaches toward a shot glass on the bar. The provided image called allen.png shows you what the Hasidic Jew looks like. The provided image edensaw.jpeg shows what the Tlingit bartender looks like.
 
 ![image](https://example.com/bar-scene.jpeg)
+- [ ] Birds Eye View
+- [x] Close Up
+- [ ] Crane Jib Shot
+- [ ] Dutch Angle
+- [ ] Establishing Shot
+- [ ] Extreme Close Up
+- [ ] Handheld Shaky Cam
+- [ ] High Angle
+- [ ] Low Angle
+- [ ] Macro Shot
+- [ ] Over The Shoulder
+- [ ] Point Of View Pov
+- [ ] Rack Focus
+- [ ] Static Shot
+- [ ] Tracking Dolly Shot
+- [ ] Two Shot
+- [ ] Wide Shot
 ![image](https://example.com/allen.png)
 ![image](https://example.com/edensaw.jpeg)
 ```
+
+### Angle Selection via Checkboxes
+
+The script reads available angles dynamically from `USER-FILES/01.CONFIG/angle-templates/`. Each `.txt` file in that directory becomes one checkbox line in the input file.
+
+**Checkbox format:**
+- `- [ ] Angle Name` — unchecked (this angle will NOT be processed)
+- `- [x] Angle Name` or `- [X] Angle Name` — checked (this angle WILL be processed)
+- The angle name must exactly match a `.txt` filename (underscores replaced with spaces)
+
+**Validation rules:**
+- Every input file MUST have a checkbox section. Missing checkboxes cause a hard fail.
+- All checkbox labels must match existing `.txt` files in `angle-templates/`. Invalid labels cause a hard fail.
+- If all checkboxes are unchecked, the file is skipped — the raw `.md` is copied to the output directory as-is.
+- Only checked angles generate API calls and output files.
+
+**To add or refresh checkboxes:** Run your MD files through the `add-multi-checkboxes` tool, which reads the current `angle-templates/` directory and inserts the correct checkbox block into each file.
 
 ## CLI Commands
 
@@ -194,18 +230,7 @@ enabled: true
 
 ## Camera Angles
 
-17 angle templates ship by default in `USER-FILES/01.CONFIG/angle-templates/`:
-
-| Angle | Angle | Angle |
-|---|---|---|
-| CLOSE_UP | WIDE_SHOT | LOW_ANGLE |
-| HIGH_ANGLE | DUTCH_ANGLE | BIRDS_EYE_VIEW |
-| EXTREME_CLOSE_UP | MACRO_SHOT | TWO_SHOT |
-| OVER_THE_SHOULDER | POINT_OF_VIEW_POV | ESTABLISHING_SHOT |
-| TRACKING_DOLLY_SHOT | CRANE_JIB_SHOT | HANDHELD_SHAKY_CAM |
-| RACK_FOCUS | STATIC_SHOT | |
-
-Add or remove `.txt` files in this directory to customize the angles.
+17 angle templates ship by default in `USER-FILES/01.CONFIG/angle-templates/`. The list is dynamic — add or remove `.txt` files to change available angles. The checkbox section in each input file is built from these filenames (underscores → spaces).
 
 ## Output Format
 
@@ -214,16 +239,13 @@ Output directories are timestamped and never overwritten:
 ```
 USER-FILES/05.OUTPUT/260524_052133_kimi-k2-thinking_RT_temp0.5_MULTI-ANGLE-MD/
 ├── prompt01/
-│   ├── prompt01_CLOSE_UP.md
-│   ├── prompt01_WIDE_SHOT.md
-│   ├── prompt01_LOW_ANGLE.md
-│   └── ... (17 files total)
-├── prompt02/
-│   └── ...
+│   ├── prompt01_Close_Up.md          ← only checked angles
+│   └── ... (only the angles you checked)
+├── prompt02.md                        ← all-unchecked file, copied as-is
 └── processing_log.txt
 ```
 
-Each output `.md` file contains the AI-generated reframing prompt plus the original image URL and character reference URLs.
+Each output `.md` file contains the AI-generated reframing prompt plus the original image URL and character reference URLs. Files with no checked angles are copied verbatim into the output directory.
 
 ## Batch Processing
 
@@ -267,3 +289,5 @@ Costs are calculated from: system prompt tokens + angle template tokens + estima
 | `Config conflict` | Remove duplicate settings — each key must be in config OR profile, not both |
 | `system_prompt.md not found` | Ensure `USER-FILES/01.CONFIG/system_prompt.md` exists |
 | `No angle templates found` | Ensure `USER-FILES/01.CONFIG/angle-templates/` contains `.txt` files |
+| `No checkbox section found` | Run your MD files through the `add-multi-checkboxes` tool |
+| `Invalid checkbox labels` | Refresh checkboxes with `add-multi-checkboxes` — angle templates may have changed |

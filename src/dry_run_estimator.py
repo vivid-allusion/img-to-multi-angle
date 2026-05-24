@@ -36,24 +36,25 @@ class DryRunEstimator:
         Returns:
             Dictionary with token counts and estimated cost
         """
-        dataset_a, dataset_b, dataset_c = parse_md_file(md_path)
+        parsed = parse_md_file(md_path)
 
-        system_prompt = build_system_prompt_with_scene(self.config["system_prompt"], dataset_a)
+        system_prompt = build_system_prompt_with_scene(self.config["system_prompt"], parsed.scene)
         system_tokens = len(system_prompt) // 4
 
-        angle_tokens = sum(len(t) // 4 for t in angles.values())
+        angles_to_use = {k: v for k, v in angles.items() if k in parsed.checked_angles} if parsed.checked_angles else angles
+        angle_tokens = sum(len(t) // 4 for t in angles_to_use.values())
 
         if "avg_output_tokens" not in self.config:
             raise ValueError("Missing 'avg_output_tokens' in configuration")
         avg_output = self.config["avg_output_tokens"]
 
         total_input = system_tokens + angle_tokens
-        total_output = avg_output * len(angles)
+        total_output = avg_output * len(angles_to_use)
 
         return {
             "input_tokens": total_input,
             "output_tokens": total_output,
-            "num_angles": len(angles),
+            "num_angles": len(angles_to_use),
         }
 
     def estimate_all_md_files(self, md_files: List[Path]) -> Dict[str, Any]:

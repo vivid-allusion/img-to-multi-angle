@@ -62,6 +62,8 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         cache_config = self.config.get("cache_config", {})
         self.use_cache = cache_config.get("enabled", False) and len(self.angles) >= 2
 
+        self._validate_all_checkboxes(files)
+
         for md_path in files:
             result = self._process_single_file(md_path, client, output_dir)
 
@@ -94,17 +96,31 @@ class MultiAngleOrchestrator(BaseOrchestrator):
             ProcessingResult with success/failure info
         """
         input_name = md_path.stem
-        logger.info(f"Processing: {md_path.name} ({len(self.angles)} angles)")
 
         try:
-            dataset_a, dataset_b, dataset_c = parse_md_file(md_path)
+            parsed = parse_md_file(md_path)
 
-            system_prompt = build_system_prompt_with_scene(build_system_prompt(self.config), dataset_a)
+            if not parsed.checked_angles:
+                logger.warning(f"Skipping {md_path.name}: no angles selected")
+                from .multi_angle_output_saver import copy_raw_md_file
+                copy_raw_md_file(md_path, output_dir)
+                return ProcessingResult(
+                    filename=md_path.name,
+                    success=True,
+                    output_path=output_dir / md_path.name,
+                    usage=UsageData(input_tokens=0, output_tokens=0, filename=md_path.name, model=self.config.get("model")),
+                    cost=0.0,
+                )
+
+            logger.info(f"Processing: {md_path.name} ({len(parsed.checked_angles)} of {len(self.angles)} angles)")
+
+            system_prompt = build_system_prompt_with_scene(build_system_prompt(self.config), parsed.scene)
 
             angle_results = {}
             total_usage = {}
-            for angle_name, angle_text in self.angles.items():
-                user_msg = render_user_message(self.um_template, dataset_b, dataset_c, angle_text)
+            for angle_name in parsed.checked_angles:
+                angle_text = self.angles[angle_name]
+                user_msg = render_user_message(self.um_template, parsed.original_image, parsed.ref_images, angle_text)
 
                 response_text, usage_data = process_text(
                     user_msg, client, self.config, self.use_cache, system_prompt=system_prompt
@@ -115,7 +131,7 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                 if usage_data:
                     total_usage = usage_data
 
-            saved_files = save_angle_outputs(output_dir, input_name, angle_results, dataset_b, dataset_c)
+            saved_files = save_angle_outputs(output_dir, input_name, angle_results, parsed.original_image, parsed.ref_images)
 
             usage = UsageData(
                 input_tokens=total_usage.get("input_tokens", 0),
@@ -142,6 +158,20 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         except Exception as e:
             logger.error(f"Failed to process {md_path.name}: {e}")
             return ProcessingResult(filename=md_path.name, success=False, error=str(e))
+
+    def _validate_all_checkboxes(self, files: List[Path]) -> None:
+        """Validate checkboxes for all input files before processing.
+
+        Args:
+            files: List of MD file paths
+        """
+        from .checkbox_validator import validate_checkboxes
+
+        available_angles = set(self.angles.keys())
+
+        for md_path in files:
+            parsed = parse_md_file(md_path)
+            validate_checkboxes(parsed.all_checkbox_lines, available_angles, md_path.name)
 
     def generate_processing_reports(
         self, output_dir: Path, stats: Dict[str, Any], metadata: Dict[str, Any], duration: float

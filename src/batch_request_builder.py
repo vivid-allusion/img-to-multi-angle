@@ -26,10 +26,10 @@ class BatchRequestBuilder:
     ) -> List[Dict[str, Any]]:
         """Convert MD items + angles to batch request format.
 
-        Each MD item generates one request per angle.
+        Each MD item generates one request per checked angle.
 
         Args:
-            md_items: List of dicts with 'filename', 'dataset_a', 'dataset_b', 'dataset_c'
+            md_items: List of dicts with 'filename', 'dataset_a', 'dataset_b', 'dataset_c', 'checked_angles'
             angles: Dict mapping angle_name -> template content
             um_template: User message template string
 
@@ -42,9 +42,19 @@ class BatchRequestBuilder:
 
         for item in md_items:
             try:
+                checked = item.get("checked_angles", list(angles.keys()))
+                if not checked:
+                    logger.info(f"Skipping {item['filename']}: no angles selected")
+                    continue
+
                 sys_prompt = build_system_prompt_with_scene(self.system_prompt, item['dataset_a'])
 
-                for angle_name, angle_text in angles.items():
+                for angle_name in checked:
+                    if angle_name not in angles:
+                        logger.error(f"Angle '{angle_name}' not found in templates for {item['filename']}")
+                        continue
+
+                    angle_text = angles[angle_name]
                     user_msg = render_user_message(
                         um_template, item["dataset_b"], item["dataset_c"], angle_text
                     )
@@ -59,7 +69,8 @@ class BatchRequestBuilder:
                 logger.error(f"Error creating batch requests for {item.get('filename')}: {e}")
                 continue
 
-        logger.info(f"Created {len(requests)} batch requests from {len(md_items)} files x {len(angles)} angles")
+        total_checked = sum(len(item.get("checked_angles", list(angles.keys()))) for item in md_items)
+        logger.info(f"Created {len(requests)} batch requests from {len(md_items)} files x {total_checked} checked angles")
 
         return requests
 

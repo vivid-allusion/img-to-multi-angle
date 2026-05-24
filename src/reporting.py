@@ -4,7 +4,7 @@
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any
 from loguru import logger
 
 
