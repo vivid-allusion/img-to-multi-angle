@@ -50,6 +50,7 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         stats = {
             "processed": 0,
             "failed": 0,
+            "skipped": 0,
             "total": len(files),
             "total_cost": 0.0,
             "results": [],
