@@ -32,7 +32,6 @@ Thumbs.db
 # Claude
 .claude/
 # User data folders — track structure, ignore content
-# User data folders — track structure, ignore content
 USER-FILES/04.INPUT/*
 !USER-FILES/04.INPUT/.gitkeep
 USER-FILES/05.OUTPUT/*
