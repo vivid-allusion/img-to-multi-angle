@@ -12,10 +12,6 @@ __pycache__/
 .Python
 
 # User Data
-USER-FILES/04.INPUT/
-USER-FILES/05.OUTPUT/
-USER-FILES/06.DONE/
-USER-FILES/07.TEMP/
 
 # IDE
 .vscode/
@@ -35,3 +31,12 @@ Thumbs.db
 
 # Claude
 .claude/
+# User data folders — track structure, ignore content
+USER-FILES/04.INPUT/*
+!USER-FILES/04.INPUT/.gitkeep
+USER-FILES/05.OUTPUT/*
+!USER-FILES/05.OUTPUT/.gitkeep
+USER-FILES/06.DONE/*
+!USER-FILES/06.DONE/.gitkeep
+USER-FILES/07.TEMP/*
+!USER-FILES/07.TEMP/.gitkeep
