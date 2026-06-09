@@ -41,3 +41,6 @@ USER-FILES/06.DONE/*
 !USER-FILES/06.DONE/.gitkeep
 USER-FILES/07.TEMP/*
 !USER-FILES/07.TEMP/.gitkeep
+
+# Logs
+*.log
