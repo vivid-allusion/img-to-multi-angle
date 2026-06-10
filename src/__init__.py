@@ -19,7 +19,7 @@ Core Modules:
     - api_client: OpenRouter API interaction
     - cost_calculator: Token usage and cost tracking
     - reporting: Summary and failure reporting
-    - auth: API key management via 1Password
+    - auth: API key management via env vars / pass / .env
 
 """
 
