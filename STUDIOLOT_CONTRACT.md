@@ -31,7 +31,7 @@ were passed on the command line.
 ## REQUIRED — Vehicle contract (calls an external API)
 
 - [ ] Accepts `--input_dir`, `--output_dir`, `--profile` CLI flags
-- [ ] Reads `.md` bullet files from input_dir (line 1 = prompt, line 2+ = `![](url)`)
+- [ ] Reads `.md` bullet files from input_dir (scene text = non-embed/URL lines before first image; image lines = `![](url)`)
 - [ ] Writes output to a timestamped subfolder under output_dir
 - [ ] Does NOT `import replicate` (or any provider SDK) directly — uses `engine_loader.py`
 - [ ] `engine_loader.py` vendored copy matches `studiolot/pipeline/engine_loader.py`
@@ -62,3 +62,5 @@ The studiolot repo is at:
 ## Session History
 
 <!-- Add entries here when changes are made. Same format as FC's AGENTS.md. -->
+
+- **2026-08-24**: Scene (Dataset A) is now multi-line — all lines before the first image are joined as scene text; Markdown embed/link and URL lines are skipped and logged at INFO.

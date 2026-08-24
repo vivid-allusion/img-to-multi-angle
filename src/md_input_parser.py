@@ -8,6 +8,8 @@ from natsort import natsorted
 from loguru import logger
 
 MD_IMAGE_PATTERN = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+MD_LINK_PATTERN = re.compile(r"!?\[[^\]]*\]\([^)]+\)")
+URL_PATTERN = re.compile(r"https?://|www\.", re.IGNORECASE)
 CHECKBOX_PATTERN = re.compile(r"^-\s\[[ xX]\]\s.+$")
 
 
@@ -66,14 +68,20 @@ def _parse_checkbox_line(line: str) -> tuple[str, bool]:
     return angle_name, is_checked
 
 
+def _is_skippable_line(line: str) -> bool:
+    """Check if a line matches a markdown embed/link or URL pattern."""
+    return bool(MD_LINK_PATTERN.search(line) or URL_PATTERN.search(line))
+
+
 def parse_md_file(file_path: Path) -> ParsedMdInput:
     """Parse MD file into scene, original image, ref images, and checked angles.
 
     Expected format:
-        Line 1: scene description (Dataset A)
-        Line 2: ![original](url) (Dataset B)
-        Lines 3..N: checkbox lines - [ ] / - [x] (Dataset E)
-        Lines N+1..: ![ref](url) (Dataset C)
+        Lines before first image: scene description (Dataset A); lines
+            matching embeds/links/URLs are skipped and logged
+        First image line: ![original](url) (Dataset B)
+        Then checkbox lines - [ ] / - [x] (Dataset E)
+        Then ![ref](url) lines (Dataset C)
 
     Args:
         file_path: Path to MD file
@@ -90,8 +98,6 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
     if not lines or not lines[0].strip():
         raise ValueError(f"Empty or missing scene description in {file_path.name}")
 
-    scene = lines[0].strip()
-
     images = []
     image_line_indices = []
     for i, line in enumerate(lines):
@@ -103,9 +109,21 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
     if not images:
         raise ValueError(f"No images found in {file_path.name}")
 
+    first_image_idx = image_line_indices[0]
+    scene_lines = []
+    for line in lines[:first_image_idx]:
+        if _is_skippable_line(line):
+            logger.info(f"Skipping line in {file_path.name} (embed/URL): {line.strip()}")
+            continue
+        scene_lines.append(line.strip())
+
+    if not any(line.strip() for line in scene_lines):
+        raise ValueError(f"Scene is empty after filtering in {file_path.name}")
+
+    scene = "\n".join(scene_lines).strip()
+
     original_image = images[0]
 
-    first_image_idx = image_line_indices[0]
     lines_after_first_image = lines[first_image_idx + 1:]
 
     checkbox_lines = []

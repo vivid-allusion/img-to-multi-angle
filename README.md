@@ -54,8 +54,8 @@ Alternatively, if you have [1Password CLI](https://developer.1password.com/docs/
 
 Place `.md` files in `USER-FILES/04.INPUT/`. Each file must have:
 
-- **Line 1**: Scene description — narrative text describing characters, environment, and which reference images correspond to which characters
-- **Line 2**: Original image — first Markdown image link (the main scene image)
+- **Scene lines**: Scene description — narrative text describing characters, environment, and which reference images correspond to which characters. May span multiple lines before the first image; lines matching a Markdown embed/link (`![alt](url)`, `[text](url)`) or a URL (`http://`, `https://`, `www.`) are skipped and logged
+- **First image line**: Original image — first Markdown image link (the main scene image)
 - **Checkbox section**: One checkbox per available angle (see below for format)
 - **Remaining lines**: Reference images — character reference sheet Markdown image links
 

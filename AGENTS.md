@@ -1,4 +1,37 @@
-## Last Session Summary (2026-05-23) — Multi-Angle Reframing Feature v3
+## Last Session Summary (2026-08-24) — Skip Image/URL Lines Before Endpoint
+
+### Feature Implementation — ✅ COMPLETE (all 5 tasks verified)
+- Scene (Dataset A) is now **multi-line**: all lines before the first image line are joined as scene text
+- Lines matching Markdown embeds/links (`![alt](url)`, `[text](url)`) or URLs (`http://`, `https://`, `www.`) are **skipped and logged at INFO** (case-insensitive)
+- Fails fast: `ValueError` if scene is empty after filtering
+- Checkbox parsing, image extraction (Datasets B/C), and all downstream behavior unchanged
+
+### Implementation Details
+- `src/md_input_parser.py` (174 lines): added `MD_LINK_PATTERN`, `URL_PATTERN` (IGNORECASE), `_is_skippable_line()` helper; scene built in `parse_md_file()` from `lines[:first_image_idx]`, joined with `\n`, then `.strip()` (keeps existing single-line scenes byte-identical)
+- No downstream changes needed — all consumers treat `scene` as an opaque string
+- Docs updated: `README.md` (Input Format), `STUDIOLOT_CONTRACT.md` (vehicle bullet + session history)
+
+### Verified
+- Direct parse tests: link line, http/www line, uppercase `HTTPS://` line all skipped and logged; scene joined correctly
+- Empty-after-filter scene raises `ValueError` (fail fast)
+- Regression: existing real input file parses identically (scene byte-identical, 17 angles)
+- `venv/bin/python -m src.main --cost-only` end-to-end OK
+
+### Session Insights (worth remembering)
+- **`--dry-run` (realtime mode) does NOT parse MD files** — it only sets up config/output dir and writes an empty report. The parse-based dry-run path is **`--cost-only`** (uses `DryRunEstimator` → `parse_md_file`)
+- `--cost-only` no longer fails on auth (1Password stripped; dummy key used for token counting)
+- Test MD files in `04.INPUT/` were removed after verification so fake URLs never reach real API runs
+
+### Codebase Stats
+- 31 Python files in `src/`, 3,804 total lines
+- 0 syntax errors, 0 TODO/FIXME, 0 print() in src/
+- 1 file over 250-line soft limit: `cli_handler.py` (263) — known, not blocking
+- 0 files over 400-line hard limit
+
+### Remaining Tasks
+- None for this feature. Live API test still pending from earlier sessions (requires API credits).
+
+## Older Session Summary (2026-05-23) — Multi-Angle Reframing Feature v3
 
 ### Feature Implementation — ✅ COMPLETE
 - Transformed codebase from TXT-to-Montage to MD-to-Multi-Angle processor
@@ -83,7 +116,7 @@ python3 -m src.main --cost-only        # OK ($0.0131 for 1 file x 17 angles)
 Multi-Angle MD Processor — transforms Markdown files into multi-angle reframed outputs using OpenRouter API.
 
 ## Architecture
-- **31 Python files** in `src/`, **3,832 total lines**
+- **31 Python files** in `src/`, **3,804 total lines**
 - Entry point: `python -m src.main`
 - Config: `USER-FILES/01.CONFIG/openrouter_config.yaml` + `USER-FILES/03.PROFILES/*.yaml`
 - Input: `USER-FILES/04.INPUT/*.md` (must include checkbox section)
@@ -112,7 +145,7 @@ Multi-Angle MD Processor — transforms Markdown files into multi-angle reframed
 - Created shared `require_batch_config()` utility
 - All stale docstrings updated, version bumped to 5.0.0
 
-## Codebase Health (as of 2026-05-24)
+## Codebase Health (as of 2026-08-24)
 - 0 syntax errors
 - 0 unused imports
 - 0 functions with cyclomatic complexity >10
@@ -121,7 +154,7 @@ Multi-Angle MD Processor — transforms Markdown files into multi-angle reframed
 - 0 TODO/FIXME comments
 - 0 logger.debug() statements
 - 0 print() statements in src/
-- ~972 lines removed from peak (~21% reduction from 4,558 → 3,586; +246 from checkbox feature → 3,832)
+- 31 files in `src/`, 3,804 total lines
 
 ## Future Considerations
 - 8 functions have exactly 5 parameters (borderline acceptable, not blocking)
@@ -129,6 +162,6 @@ Multi-Angle MD Processor — transforms Markdown files into multi-angle reframed
 ## Testing
 ```bash
 venv/bin/python -m src.main --list-profiles   # Works
-venv/bin/python -m src.main --dry-run          # Works
-venv/bin/python -m src.main --cost-only        # Fails on 1Password auth (expected)
+venv/bin/python -m src.main --dry-run          # Works (does NOT parse MD files)
+venv/bin/python -m src.main --cost-only        # Works (dummy API key for token counting)
 ```
