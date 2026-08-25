@@ -88,3 +88,4 @@ class DryRunReportFormatter:
         f.write("- Output tokens are estimated based on historical averages\n")
         f.write("- Actual costs may vary depending on response length\n")
         f.write("- Cache savings are included if caching is enabled\n")
+        f.write("- WARNING: image input tokens are NOT included in this estimate — real costs will be higher\n")

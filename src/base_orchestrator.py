@@ -34,9 +34,9 @@ class BaseOrchestrator(ABC):
         Returns:
             Tuple of (API client or None, setup metadata)
         """
-        from .reporting import setup_logging
+        from .reporting import setup_logging as _setup_logging
 
-        setup_logging(output_dir)
+        _setup_logging(output_dir)
 
         metadata = {
             "start_time": datetime.now(),
@@ -52,6 +52,12 @@ class BaseOrchestrator(ABC):
 
         client = self._initialize_api_client()
         return client, metadata
+
+    def setup_logging(self, output_dir: Path) -> None:
+        """Point run logging at the given directory (staging, during real runs)."""
+        from .reporting import setup_logging
+
+        setup_logging(output_dir)
 
     def _initialize_api_client(self) -> OpenRouter:
         """Initialize and configure the OpenRouter API client."""

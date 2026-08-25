@@ -56,6 +56,9 @@ batch_mode: false
 parameters:
   temperature: 0.5
   max_tokens: 8000
+  # Measured 2026-08-25 live run: prompt_tokens 4156-4206 per angle call.
+  # Floor = 50% of lowest observed. See AGENTS.md session summary.
+  min_prompt_tokens: 2078
 
 # =============================================================================
 # SYSTEM PROMPT (Optional)

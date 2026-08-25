@@ -24,6 +24,11 @@ def parse_arguments():
     )
     parser.add_argument("--dry-run", action="store_true", help="Run without making API calls")
     parser.add_argument(
+        "--selftest",
+        action="store_true",
+        help="Send a test image to the API and verify left/right vision, then exit",
+    )
+    parser.add_argument(
         "--cost-only",
         action="store_true",
         help="Estimate costs only using token counting API",
@@ -143,6 +148,22 @@ def discover_mds(args):
         return discover_md_files(input_path), input_path
 
 
+def _maybe_run_selftest(config) -> None:
+    """Run the vision selftest first during dry-run, if an API key is available."""
+    try:
+        from .auth import get_api_key
+
+        api_key = get_api_key()
+    except SystemExit:
+        logger.info("No API key available — skipping selftest in dry-run")
+        return
+
+    from openrouter import OpenRouter
+    from .selftest import run_selftest
+
+    run_selftest(OpenRouter(api_key=api_key), config)
+
+
 def main():
     """Main entry point."""
     args = parse_arguments()
@@ -153,6 +174,18 @@ def main():
         return
 
     config = load_configuration(args)
+
+    if args.selftest:
+        from .auth import get_api_key
+        from openrouter import OpenRouter
+        from .selftest import run_selftest
+
+        run_selftest(OpenRouter(api_key=get_api_key()), config)
+        return
+
+    if args.dry_run and not args.cost_only:
+        _maybe_run_selftest(config)
+
     handler = CLIHandler(config)
 
     if handler.handle_batch_operations(args):

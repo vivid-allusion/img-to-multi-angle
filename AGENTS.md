@@ -1,3 +1,88 @@
+## Last Session Summary (2026-08-25) — Phase 1: Real Images + Hard Failure Guarantees
+
+### Feature Implementation — ✅ COMPLETE (all tasks verified, NOT blocked)
+The stage-5 model now actually receives the images, and any deviation from a flawless run
+aborts with **zero MD deliverables** (prime directive, plan_context.md §0.4).
+
+- `--selftest` **PASSED against the live API** — red/green/blue orientation correct (acceptance 1)
+- All four deliberate-failure tests exit non-zero with no output directory (acceptance 2)
+- Live reference run succeeded: 17/17 angles, atomic promotion, 123.8s
+- Prompts verified: every concrete detail (wide-brimmed-hat man at frame left, birch forest,
+  crate-laden flatcar, two draft horses, lanterns, twilight) confirmed present in the image by an
+  independent vision-call description — no fabricated staging (acceptance 3)
+- `min_prompt_tokens` baseline **measured** (not guessed): prompt_tokens 4156–4206 per angle call
+  → floor set to 2078 in the profile
+
+### New Modules (4)
+- `payload_builder.py` (65) — `build_user_content()`: 5 ordered content parts (scene text, original
+  image `detail:"original"`, ref images, image-label marker lines, angle template), mandatory
+  `PayloadIntegrityError` invariant (image-part count == 1 + refs), `cache_breakpoint` wired
+- `preflight.py` (132) — `run_preflight()`: A) parse+checkbox validation (moved from orchestrator),
+  B) image URL reachability (httpx HEAD, image/*, ≤20MB, ranged-GET retry on 405, per-run cache),
+  C) model vision capability via `models.list().architecture.input_modalities`, D) loud warnings on
+  dead cache_config keys. Runs before any directory exists
+- `output_staging.py` (33) — sibling `.staging` dir, `os.replace` promotion, `_FAILED` rename +
+  `FAILURE_REPORT.md` on failure
+- `selftest.py` (53) — canary: committed 256×256 red/green/blue PNG (stdlib zlib+struct, 1071 bytes)
+  sent as data: URL; asserts left/right orientation; wired into `--selftest` and as the first thing
+  `--dry-run` does when a key is available
+
+### Modules Modified (10)
+- `api_client.py` — `process_text` takes `user_content: list`; per-response verification (non-empty
+  text raise; prompt_tokens floor raise; null floor → loud WARNING each call); deleted
+  `build_system_prompt_with_scene` (scene relocated into user content part 1 per §1.1 ordering)
+- `multi_angle_orchestrator.py` (241) — blanket per-file except removed (failures raise
+  `FileProcessingError` with file+angle context); preflight → staging → promote flow; dry-run and
+  zero-ticked passthrough unchanged
+- `batch_request_builder.py` — uses shared builder; scene no longer stapled to system prompt
+- `config.py` — `get_output_directory` is pure (no mkdir); directory lifecycle owned by staging
+- `base_orchestrator.py` — added `setup_logging(output_dir)`; real runs log into staging
+- `profile_manager.py` / `config_validator.py` — `min_prompt_tokens` profile key applied;
+  added to SKIPPED_KEYS (null allowed)
+- `dry_run_estimator.py` / `dry_run_report_formatter.py` — explicit warning that image tokens are
+  excluded from `--cost-only`; scene tokens counted; estimator creates its own report dir
+- `main.py` — `--selftest` flag; `_maybe_run_selftest` in dry-run (skips quietly without key)
+- `user_message.md` — removed image-embed placeholder sections and the false "scene description in
+  your system prompt" sentence; remains the angle-template instruction wrapper (part 5)
+- `gemini-3.7-flash_temp0.5_REAL-TIME.yaml` — `min_prompt_tokens: 2078` (measured 2026-08-25)
+
+### Verified
+- `--selftest` exit 0 (live), `--list-profiles` unchanged, `--cost-only` warns about image tokens
+- Failure tests: 404 URL / text/html content-type / text-only model (deepseek-chat) / monkeypatched
+  builder → all exit 1, no final output dir (test 4 leaves the plan-mandated `_FAILED` dir)
+- Floor logic verified offline (stub client): abort below floor, warning when null
+- Live run output: `USER-FILES/05.OUTPUT/260825_230900_gemini-3.7-flash_RT_temp0.5_MULTI-ANGLE-MD/`
+- Old blind outputs (for comparison): `/home/admin/Nextcloud-QO1/BEKER/260825_140626_..._MULTI-ANGLE-MD/`
+
+### Open Questions (from USER-FILES/07.TEMP/questions.md — pending user answers)
+- Q1 signed/private URL policy in preflight | Q2 `_FAILED` residue policy (plan-as-written: partials
+  kept) | Q3 dry-run selftest billing (plan-as-written: wired) | Q4 token floor vs Phase 3 `--plan`
+  calls | Q5 batch mode scope (plan-as-written: builder fixed) | Q6 dead params (wired now per plan)
+  | Q11 cost-only (warning chosen) | Q7/Q8/Q9/Q10/Q12 belong to Phases 2–4
+
+### Known — out of scope for this plan (do not fix in Phases 1–4)
+- `STUDIOLOT_CONTRACT.md` flags not implemented (`--input_dir` hyphen mismatch, no `--output_dir`,
+  hardcoded `USER-FILES/05.OUTPUT` in `config.py`) — needs its own task
+- `src/cli_handler.py` is 263 lines (soft-limit overage, known, not blocking)
+- `angle-templates/NEW.md` has spelling errors — normalise in Phase 3.4
+- Usage accumulation bug (per-file cost = last call only) — Phase 4 §4.1
+- `cache_system_prompt` / `report_cache_metrics` dead keys — Phase 4 §4.3
+- Rack_Focus/Tracking_Dolly/Crane_Jib/Handheld templates still describe motion — Phase 2 §2.3
+- Batch mode: only realtime profile active; batch path uses shared builder but has no staging
+
+### Codebase Stats (as of 2026-08-25)
+- 35 Python files in `src/`, 4,142 total lines
+- 0 syntax errors, 0 print(), 0 TODO/FIXME in src/
+- New files all ≤ 250 lines; `multi_angle_orchestrator.py` trimmed to 241
+- 1 file over the 250-line soft limit: `cli_handler.py` (263) — known, not blocking
+- 0 files over 400-line hard limit
+
+### Next Phase
+- Phase 2 opens only after this live-run verification — which has now happened ✅
+- Phase 2: prompt quality (preservation clause, de-motion, style stripping, temp 0.2, few-shots)
+
+---
+
 ## Last Session Summary (2026-08-24) — Skip Image/URL Lines Before Endpoint
 
 ### Feature Implementation — ✅ COMPLETE (all 5 tasks verified)

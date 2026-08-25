@@ -129,7 +129,7 @@ def _apply_model_config(config: Dict[str, Any], profile: Dict[str, Any]) -> None
 def _apply_parameters(config: Dict[str, Any], profile: Dict[str, Any]) -> None:
     """Apply parameter settings from profile."""
     params = profile.get("parameters", {})
-    for key in ("temperature", "max_tokens"):
+    for key in ("temperature", "max_tokens", "min_prompt_tokens"):
         if key in params:
             config[key] = params[key]
 

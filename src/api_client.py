@@ -1,6 +1,6 @@
 """OpenRouter API wrapper for multi-angle processing."""
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from openrouter import OpenRouter
 from loguru import logger
 from .response_utils import extract_response_text
@@ -9,19 +9,6 @@ from .response_utils import extract_response_text
 def build_system_prompt(config: Dict[str, Any]) -> str:
     """Build system prompt for OpenRouter."""
     return config.get("system_prompt", "")
-
-
-def build_system_prompt_with_scene(system_prompt: str, dataset_a: str) -> str:
-    """Build system prompt with scene description appended.
-
-    Args:
-        system_prompt: Base system prompt from config
-        dataset_a: Scene description text
-
-    Returns:
-        Combined system prompt with scene description
-    """
-    return f"{system_prompt}\n\n---\n\n# Scene Description\n\n{dataset_a}"
 
 
 def _build_system_message(system: str, use_cache: bool) -> Dict[str, Any]:
@@ -40,13 +27,13 @@ def _build_system_message(system: str, use_cache: bool) -> Dict[str, Any]:
     return {"role": "system", "content": system}
 
 
-def _build_api_payload(text_content: str, config: Dict[str, Any], system_message: Dict[str, Any]) -> Dict[str, Any]:
+def _build_api_payload(user_content: List[Dict[str, Any]], config: Dict[str, Any], system_message: Dict[str, Any]) -> Dict[str, Any]:
     """Build the API request payload."""
     api_payload = {
         "model": config["model"],
         "messages": [
             system_message,
-            {"role": "user", "content": text_content},
+            {"role": "user", "content": user_content},
         ],
     }
 
@@ -85,17 +72,22 @@ def _extract_usage_data(response) -> Dict[str, Any]:
 
 
 def process_text(
-    text_content: str,
+    user_content: List[Dict[str, Any]],
     client: OpenRouter,
     config: Dict[str, Any],
     use_cache: bool = False,
     system_prompt: Optional[str] = None,
 ) -> tuple[str, Dict[str, Any]]:
-    """Send text to OpenRouter API and get response."""
+    """Send a user message to OpenRouter and verify the response.
+
+    Raises:
+        RuntimeError: If the response text is empty or prompt_tokens falls
+            below the configured min_prompt_tokens floor.
+    """
     system = system_prompt if system_prompt else build_system_prompt(config)
 
     system_message = _build_system_message(system, use_cache)
-    api_payload = _build_api_payload(text_content, config, system_message)
+    api_payload = _build_api_payload(user_content, config, system_message)
 
     try:
         logger.info(f"Calling API with model: {api_payload['model']}")
@@ -104,14 +96,30 @@ def process_text(
         if "max_tokens" in api_payload:
             logger.info(f"Max tokens: {api_payload['max_tokens']}")
 
-        logger.info(f"System prompt: {len(system)} chars, User message: {len(text_content)} chars")
+        logger.info(f"System prompt: {len(system)} chars, User message parts: {len(user_content)}")
 
         response = client.chat.send(**api_payload)
 
         response_text = extract_response_text(response)
         usage_data = _extract_usage_data(response)
 
-        logger.info(f"Processed text ({len(text_content)} chars) -> ({len(response_text)} chars)")
+        logger.info(f"Processed ({len(user_content)} parts) -> ({len(response_text)} chars)")
+
+        if not response_text.strip():
+            raise RuntimeError("API returned empty response text — aborting run")
+
+        prompt_tokens = usage_data.get("input_tokens", 0)
+        floor = config.get("min_prompt_tokens")
+        if floor is None:
+            logger.warning(
+                "min_prompt_tokens is not set — token floor check skipped. "
+                "Set it to ~50% of the observed prompt_tokens after the first live run."
+            )
+        elif prompt_tokens < floor:
+            raise RuntimeError(
+                f"prompt_tokens ({prompt_tokens}) below min_prompt_tokens floor ({floor}) — "
+                "payload regression suspected, aborting run"
+            )
 
     except Exception as e:
         error_type = type(e).__name__

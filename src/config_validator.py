@@ -83,7 +83,7 @@ class FieldValidator:
     REQUIRED_PROCESSING_OPTIONS = {"trim_prompts", "normalize_spaces", "max_prompt_length", "include_filename"}
     REQUIRED_RETRY_CONFIG = {"max_retries", "timeout"}
     REQUIRED_BATCH_CONFIG = {"max_requests_per_batch", "batch_request_dir", "save_batch_request_file"}
-    SKIPPED_KEYS = {"metadata", "enabled", "prompt_suffix", "fields_to_remove"}
+    SKIPPED_KEYS = {"metadata", "enabled", "prompt_suffix", "fields_to_remove", "min_prompt_tokens"}
 
     def validate_required_fields(self, config: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Validate that all required fields are present.

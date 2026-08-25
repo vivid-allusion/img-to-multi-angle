@@ -8,7 +8,6 @@ from loguru import logger
 from .dry_run_report_formatter import DryRunReportFormatter
 from .md_input_parser import parse_md_file
 from .angle_loader import load_angle_templates
-from .api_client import build_system_prompt_with_scene
 
 
 class DryRunEstimator:
@@ -38,8 +37,8 @@ class DryRunEstimator:
         """
         parsed = parse_md_file(md_path)
 
-        system_prompt = build_system_prompt_with_scene(self.config["system_prompt"], parsed.scene)
-        system_tokens = len(system_prompt) // 4
+        system_tokens = len(self.config["system_prompt"]) // 4
+        scene_tokens = len(parsed.scene) // 4
 
         angles_to_use = {k: v for k, v in angles.items() if k in parsed.checked_angles} if parsed.checked_angles else angles
         angle_tokens = sum(len(t) // 4 for t in angles_to_use.values())
@@ -48,7 +47,7 @@ class DryRunEstimator:
             raise ValueError("Missing 'avg_output_tokens' in configuration")
         avg_output = self.config["avg_output_tokens"]
 
-        total_input = system_tokens + angle_tokens
+        total_input = system_tokens + scene_tokens + angle_tokens
         total_output = avg_output * len(angles_to_use)
 
         return {
@@ -68,6 +67,10 @@ class DryRunEstimator:
         """
         angle_dir = Path("USER-FILES/01.CONFIG/angle-templates")
         angles = load_angle_templates(angle_dir)
+
+        logger.warning(
+            "Image input tokens are NOT included in this estimate — real costs will be higher"
+        )
 
         results = {
             "estimated_files": 0,
@@ -118,4 +121,5 @@ class DryRunEstimator:
         Returns:
             Path to the generated report
         """
+        output_dir.mkdir(parents=True, exist_ok=True)
         return DryRunReportFormatter.generate_cost_report(results, self.config, output_dir)

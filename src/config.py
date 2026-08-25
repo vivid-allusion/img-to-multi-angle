@@ -170,9 +170,11 @@ def get_model_display_name(model_name: str, config: Optional[Dict[str, Any]] = N
 
 
 def get_output_directory(config: Optional[Dict[str, Any]] = None, suffix: str = "") -> Path:
-    """Create and return timestamped output directory with profile information.
+    """Compute the timestamped output directory path with profile information.
 
     Directory name format: YYMMDD_HHMMSS_model_tempX.X[_suffix]
+
+    Does NOT create the directory — creation is owned by output_staging.
 
     Args:
         config: Optional configuration dictionary containing model and temperature
@@ -210,6 +212,4 @@ def get_output_directory(config: Optional[Dict[str, Any]] = None, suffix: str = 
     dir_name = "_".join(dir_parts)
 
     output_dir = Path("USER-FILES") / "05.OUTPUT" / dir_name
-    output_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Created output directory: {output_dir}")
     return output_dir

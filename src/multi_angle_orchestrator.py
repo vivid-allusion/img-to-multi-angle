@@ -1,5 +1,6 @@
 """Multi-angle orchestrator for MD-to-Multi-Angle processing."""
 
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List
@@ -10,10 +11,12 @@ from .base_orchestrator import BaseOrchestrator
 from .md_input_parser import parse_md_file
 from .angle_loader import load_angle_templates
 from .user_message_template import load_user_message_template, render_user_message
-from .api_client import process_text, build_system_prompt, build_system_prompt_with_scene
+from .payload_builder import build_user_content
+from .api_client import process_text, build_system_prompt
 from .multi_angle_output_saver import save_angle_outputs
 from .data_models import ProcessingResult, UsageData
 from .cost_calculator import calculate_cost
+from .exceptions import FileProcessingError
 
 
 class MultiAngleOrchestrator(BaseOrchestrator):
@@ -62,19 +65,11 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         cache_config = self.config.get("cache_config", {})
         self.use_cache = cache_config.get("enabled", False) and len(self.angles) >= 2
 
-        self._validate_all_checkboxes(files)
-
         for md_path in files:
             result = self._process_single_file(md_path, client, output_dir)
 
-            if result.success:
-                stats["processed"] += 1
-                stats["total_cost"] += result.cost
-            else:
-                stats["failed"] += 1
-                if result.error:
-                    stats["errors"].append(f"{result.filename}: {result.error}")
-
+            stats["processed"] += 1
+            stats["total_cost"] += result.cost
             stats["results"].append(result)
 
         return stats
@@ -90,88 +85,78 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         Args:
             md_path: Path to MD file
             client: OpenRouter API client
-            output_dir: Output directory
+            output_dir: Output directory (staging during real runs)
 
-        Returns:
-            ProcessingResult with success/failure info
+        Raises:
+            FileProcessingError: If any angle call fails — the run must abort
         """
         input_name = md_path.stem
 
-        try:
-            parsed = parse_md_file(md_path)
+        parsed = parse_md_file(md_path)
 
-            if not parsed.checked_angles:
-                logger.warning(f"Skipping {md_path.name}: no angles selected")
-                from .multi_angle_output_saver import copy_raw_md_file
-                copy_raw_md_file(md_path, output_dir)
-                return ProcessingResult(
-                    filename=md_path.name,
-                    success=True,
-                    output_path=output_dir / md_path.name,
-                    usage=UsageData(input_tokens=0, output_tokens=0, filename=md_path.name, model=self.config.get("model")),
-                    cost=0.0,
-                )
-
-            logger.info(f"Processing: {md_path.name} ({len(parsed.checked_angles)} of {len(self.angles)} angles)")
-
-            system_prompt = build_system_prompt_with_scene(build_system_prompt(self.config), parsed.scene)
-
-            angle_results = {}
-            total_usage = {}
-            for angle_name in parsed.checked_angles:
-                angle_text = self.angles[angle_name]
-                user_msg = render_user_message(self.um_template, parsed.original_image, parsed.ref_images, angle_text)
-
-                response_text, usage_data = process_text(
-                    user_msg, client, self.config, self.use_cache, system_prompt=system_prompt
-                )
-
-                angle_results[angle_name] = response_text
-
-                if usage_data:
-                    total_usage = usage_data
-
-            saved_files = save_angle_outputs(output_dir, input_name, angle_results, parsed.original_image, parsed.ref_images)
-
-            usage = UsageData(
-                input_tokens=total_usage.get("input_tokens", 0),
-                output_tokens=total_usage.get("output_tokens", 0),
-                filename=md_path.name,
-                model=self.config.get("model"),
-            )
-
-            cost = calculate_cost(
-                usage_data=total_usage,
-                config=self.config,
-                model=str(self.config.get("model", "")),
-                batch_mode=self.config.get("batch_mode", False),
-            )
-
+        if not parsed.checked_angles:
+            logger.warning(f"Skipping {md_path.name}: no angles selected")
+            from .multi_angle_output_saver import copy_raw_md_file
+            copy_raw_md_file(md_path, output_dir)
             return ProcessingResult(
                 filename=md_path.name,
                 success=True,
-                output_path=saved_files[0] if saved_files else None,
-                usage=usage,
-                cost=cost,
+                output_path=output_dir / md_path.name,
+                usage=UsageData(input_tokens=0, output_tokens=0, filename=md_path.name, model=self.config.get("model")),
+                cost=0.0,
             )
 
-        except Exception as e:
-            logger.error(f"Failed to process {md_path.name}: {e}")
-            return ProcessingResult(filename=md_path.name, success=False, error=str(e))
+        logger.info(f"Processing: {md_path.name} ({len(parsed.checked_angles)} of {len(self.angles)} angles)")
 
-    def _validate_all_checkboxes(self, files: List[Path]) -> None:
-        """Validate checkboxes for all input files before processing.
+        system_prompt = build_system_prompt(self.config)
 
-        Args:
-            files: List of MD file paths
-        """
-        from .checkbox_validator import validate_checkboxes
+        angle_results = {}
+        total_usage = {}
+        for angle_name in parsed.checked_angles:
+            angle_text = self.angles[angle_name]
+            user_msg = render_user_message(self.um_template, parsed.original_image, parsed.ref_images, angle_text)
 
-        available_angles = set(self.angles.keys())
+            try:
+                user_content = build_user_content(
+                    scene=parsed.scene,
+                    original_image=parsed.original_image,
+                    ref_images=parsed.ref_images,
+                    angle_text=user_msg,
+                )
+                response_text, usage_data = process_text(
+                    user_content, client, self.config, self.use_cache, system_prompt=system_prompt
+                )
+            except Exception as e:
+                raise FileProcessingError(f"{md_path.name} angle '{angle_name}': {e}") from e
 
-        for md_path in files:
-            parsed = parse_md_file(md_path)
-            validate_checkboxes(parsed.all_checkbox_lines, available_angles, md_path.name)
+            angle_results[angle_name] = response_text
+
+            if usage_data:
+                total_usage = usage_data
+
+        saved_files = save_angle_outputs(output_dir, input_name, angle_results, parsed.original_image, parsed.ref_images)
+
+        usage = UsageData(
+            input_tokens=total_usage.get("input_tokens", 0),
+            output_tokens=total_usage.get("output_tokens", 0),
+            filename=md_path.name,
+            model=self.config.get("model"),
+        )
+
+        cost = calculate_cost(
+            usage_data=total_usage,
+            config=self.config,
+            model=str(self.config.get("model", "")),
+            batch_mode=self.config.get("batch_mode", False),
+        )
+
+        return ProcessingResult(
+            filename=md_path.name,
+            success=True,
+            output_path=saved_files[0] if saved_files else None,
+            usage=usage,
+            cost=cost,
+        )
 
     def generate_processing_reports(
         self, output_dir: Path, stats: Dict[str, Any], metadata: Dict[str, Any], duration: float
@@ -204,23 +189,17 @@ def process_all_md_files(
 ) -> Dict[str, Any]:
     """Process all MD files using orchestrator.
 
-    Args:
-        md_files: List of MD file paths
-        config: Configuration dictionary
-        output_dir: Output directory
-        input_dir: Input directory
-        dry_run: If True, skip API calls
-
-    Returns:
-        Processing statistics
+    Real runs: preflight first, then stage, then promote atomically. On any
+    failure the staging dir is renamed to _FAILED and the run exits non-zero —
+    the final output directory is never created.
     """
     orchestrator = MultiAngleOrchestrator(config, input_dir)
 
-    client, metadata = orchestrator.setup_processing(output_dir, dry_run)
-
-    start_time = metadata["start_time"]
+    start_time = datetime.now()
 
     if dry_run:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        _, metadata = orchestrator.setup_processing(output_dir, dry_run=True)
         stats = {
             "processed": 0,
             "failed": 0,
@@ -230,9 +209,28 @@ def process_all_md_files(
             "results": [],
             "errors": [],
         }
-    else:
-        assert client is not None, "Client should not be None in non-dry-run mode"
-        stats = orchestrator.process_batch(md_files, client, output_dir)
+        orchestrator.generate_processing_reports(output_dir, stats, metadata, 0.0)
+        return stats
+
+    from .preflight import run_preflight
+    from .output_staging import create_staging_dir, promote_staging, fail_run
+
+    client = orchestrator._initialize_api_client()
+    run_preflight(config, md_files, client)
+
+    staging_dir = create_staging_dir(output_dir)
+    orchestrator.setup_logging(staging_dir)
+
+    metadata = {"start_time": start_time, "dry_run": False, "output_dir": output_dir}
+
+    try:
+        stats = orchestrator.process_batch(md_files, client, staging_dir)
+    except Exception as e:
+        fail_run(staging_dir, output_dir, f"# FAILURE REPORT\n\n- Error: {e}\n")
+        logger.error(f"Run aborted — no deliverables written: {e}")
+        sys.exit(1)
+
+    promote_staging(staging_dir, output_dir)
 
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()

@@ -2,7 +2,8 @@
 
 from typing import Dict, Any, List
 from loguru import logger
-from .api_client import build_system_prompt, build_system_prompt_with_scene
+from .api_client import build_system_prompt
+from .payload_builder import build_user_content
 
 MAX_CUSTOM_ID_LENGTH = 64
 
@@ -47,8 +48,6 @@ class BatchRequestBuilder:
                     logger.info(f"Skipping {item['filename']}: no angles selected")
                     continue
 
-                sys_prompt = build_system_prompt_with_scene(self.system_prompt, item['dataset_a'])
-
                 for angle_name in checked:
                     if angle_name not in angles:
                         logger.error(f"Angle '{angle_name}' not found in templates for {item['filename']}")
@@ -58,9 +57,15 @@ class BatchRequestBuilder:
                     user_msg = render_user_message(
                         um_template, item["dataset_b"], item["dataset_c"], angle_text
                     )
+                    user_content = build_user_content(
+                        scene=item["dataset_a"],
+                        original_image=item["dataset_b"],
+                        ref_images=item["dataset_c"],
+                        angle_text=user_msg,
+                    )
 
                     request = self._build_single_request(
-                        item["filename"], angle_name, sys_prompt, user_msg
+                        item["filename"], angle_name, self.system_prompt, user_content
                     )
                     if request:
                         requests.append(request)
@@ -75,15 +80,15 @@ class BatchRequestBuilder:
         return requests
 
     def _build_single_request(
-        self, filename: str, angle_name: str, system_prompt: str, user_content: str
+        self, filename: str, angle_name: str, system_prompt: str, user_content: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """Build a single batch request.
 
         Args:
             filename: Original filename
             angle_name: Angle template name
-            system_prompt: System prompt (includes Dataset A)
-            user_content: Rendered user message
+            system_prompt: System prompt (scene lives in the user message)
+            user_content: Ordered content parts from build_user_content
 
         Returns:
             Batch request object
