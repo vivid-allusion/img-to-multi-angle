@@ -31,15 +31,24 @@ class PreflightReport:
 
 
 def run_preflight(
-    config: Dict[str, Any], md_files: List[Path], client: OpenRouter
+    config: Dict[str, Any],
+    md_files: List[Path],
+    client: OpenRouter,
+    plan_mode: bool = False,
 ) -> PreflightReport:
-    """Run all preflight checks in order. Raises on the first failure."""
+    """Run all preflight checks in order. Raises on the first failure.
+
+    plan_mode: checkbox validation is skipped (Q19 — --plan accepts files
+    without a checkbox section); URL/vision/config checks still run.
+    """
     available_angles = set(load_angle_templates(ANGLE_TEMPLATE_DIR).keys())
 
     parsed_files = []
     for md_path in md_files:
         parsed = parse_md_file(md_path)
-        validate_checkboxes(parsed.all_checkbox_lines, available_angles, md_path.name)
+        if not plan_mode:
+            roster = {s.id for s in parsed.shot_sheet.subjects} if parsed.shot_sheet else None
+            validate_checkboxes(parsed.all_checkbox_lines, available_angles, md_path.name, roster=roster)
         parsed_files.append((md_path.name, parsed))
 
     url_cache: Dict[str, bool] = {}

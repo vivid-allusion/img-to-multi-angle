@@ -47,8 +47,14 @@ class DryRunEstimator:
             raise ValueError("Missing 'avg_output_tokens' in configuration")
         avg_output = self.config["avg_output_tokens"]
 
-        total_input = system_tokens + scene_tokens + angle_tokens
-        total_output = avg_output * len(angles_to_use)
+        # §3.8: one --plan vision call per file (image tokens excluded, see warning)
+        from .shot_planner import PLAN_INSTRUCTION
+
+        plan_input = len(PLAN_INSTRUCTION) // 4
+        plan_output = avg_output
+
+        total_input = system_tokens + scene_tokens + angle_tokens + plan_input
+        total_output = avg_output * len(angles_to_use) + plan_output
 
         return {
             "input_tokens": total_input,

@@ -1,26 +1,35 @@
-"""Checkbox validator for multi-angle MD input files."""
+"""Checkbox validator for multi-angle MD input files.
 
+Q15 dual grammar: plain angle-name labels validate against templates only;
+suffixed labels ("<Angle> — <subject ids>") additionally validate the ids
+against the shot-sheet roster. Failures stay hard (sys.exit).
+"""
+
+import re
 import sys
 from pathlib import Path
-from typing import List, Set, Tuple
+from typing import List, Optional, Set, Tuple
 from loguru import logger
 
 from .angle_loader import get_available_angle_names
 
-CHECKBOX_LINE_PATTERN = r"^- \[[ xX]\] .+$"
+SUBJECT_ID_PATTERN = re.compile(r"\bS\d+\b")
 
 
 def validate_checkboxes(
     checkbox_lines: List[str],
     available_angles: Set[str],
     filename: str,
+    roster: Optional[Set[str]] = None,
 ) -> None:
-    """Validate checkbox lines against available angle templates.
+    """Validate checkbox lines against angle templates and, for suffixed
+    labels, against the shot-sheet roster.
 
     Args:
         checkbox_lines: List of raw checkbox lines from MD file
         available_angles: Set of valid angle names from template directory
         filename: MD filename for error messages
+        roster: Set of valid subject ids from the shot sheet (None = no sheet)
 
     Raises:
         SystemExit: If validation fails
@@ -30,14 +39,33 @@ def validate_checkboxes(
         logger.error("Run your MD files through the 'add-multi-checkboxes' tool to add the checkbox section")
         sys.exit(1)
 
-    angle_lookup = {name: name for name in available_angles}
-
     invalid_labels = []
     for line in checkbox_lines:
         stripped = line.strip()
-        angle_name = stripped[5:].strip().replace(" ", "_")
-        if angle_name not in angle_lookup:
-            invalid_labels.append(stripped[5:].strip())
+        label = stripped[5:].strip()
+
+        if " — " in label:
+            angle_part, subject_part = label.split(" — ", 1)
+            subject_ids = SUBJECT_ID_PATTERN.findall(subject_part)
+            if not subject_ids:
+                invalid_labels.append(label)
+                logger.error(f"{filename}: suffixed label has no subject id: '{label}'")
+                continue
+            if roster is None:
+                invalid_labels.append(label)
+                logger.error(f"{filename}: suffixed label but no shot-sheet roster: '{label}'")
+                continue
+            unknown = [sid for sid in subject_ids if sid not in roster]
+            if unknown:
+                invalid_labels.append(label)
+                logger.error(f"{filename}: unknown subject ids in label: {unknown} — '{label}'")
+                continue
+        else:
+            angle_part = label
+
+        angle_name = angle_part.replace(" ", "_")
+        if angle_name not in available_angles:
+            invalid_labels.append(label)
 
     if invalid_labels:
         logger.error(f"{filename}: Invalid checkbox labels not matching any template:")

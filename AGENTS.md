@@ -1,3 +1,114 @@
+## Last Session Summary (2026-08-26) — Phase 3: Adaptive Shot Planning
+
+### Feature Implementation — ✅ COMPLETE (all tasks verified against live API)
+Phase 3 (`plan/phase_3.md`) landed on `feature/vision-payload-and-shot-planner` (uncommitted —
+commit awaits owner's go, see "Git state"). Q19–Q22 answered and recorded in
+`USER-FILES/07.TEMP/questions.md`; Q1–Q18 already locked.
+
+### New Modules (5)
+- `shot_sheet.py` (118) — `ShotSheet`/`ShotSubject`/`ShotProp` dataclasses (schema §3.3 + Q13
+  `occluded`), `extract_shot_sheet()` fence parser (absent → None; malformed → ValueError per Q22),
+  `shot_sheet_from_dict()`. Split out of `md_input_parser.py` when it hit 305 lines (now 201)
+- `shot_planner.py` (167) — `--plan` core: strict json_schema `SHOT_SHEET_SCHEMA`
+  (subject `id` constrained to `^S[0-9]+$` — unconstrained, the model returned free-form ids
+  like `man_in_coat`, which the checkbox grammar cannot bind), `plan_file()` (reuses
+  `build_user_content` + `process_text` with `skip_token_floor=True` per Q4), `run_plan_mode()`
+  (preflight plan_mode → staging → atomic promotion; failure → `_FAILED` + exit 1 per Q16)
+- `shot_feasibility.py` (160) — §3.5 classifier: worst-case risk from size scale
+  (EWS(1)..ECU(7), target wider → novel_view), azimuth (0/≤30/90→lateral, 180→novel_view +
+  opposing-face `face_visible` gate), height (0/1/≥2 steps), `min_source_size` one-step
+  demotion, author `transform` floor. Pre-tick: subtractive → ticked; lateral → ticked iff
+  bound subjects unoccluded (Q13); novel_view → Stretch unticked. Families gate: template not
+  in the scene type's families → not shown at all
+- `plan_output_writer.py` (128) — enriched MD: verbatim copy, checkbox section (+ headings +
+  prior shot-sheet block) replaced by shot-sheet fence + `### Coverage (recommended)` +
+  `### Stretch (unlikely to match source)`; inserted after the last image embed when no
+  checkbox section exists (Q19)
+- `subject_binding.py` (42) — code-side `{subject}`/`{subject_a}`/`{subject_b}` expansion
+  (Q21): roster descriptions, generic anchors for plain labels ("the main subject" /
+  "the foreground subject" / "the subject beyond"), missing id → `FileProcessingError`
+
+### Modules Modified (10)
+- `angle_loader.py` — `AngleTemplate` dataclass + `load_angle_template_objects()` (YAML
+  frontmatter, permissive defaults for frontmatter-less `.txt`), globs `*.md`+`*.txt`, skips
+  `NEW.md`; `load_angle_templates()` kept as body-dict legacy API
+- `md_input_parser.py` — `ParsedMdInput` + `shot_sheet`, `shot_sheet_text`,
+  `checked_angle_bindings`; checkbox labels split on " — " into angle + `S\d+` ids (Q15)
+- `checkbox_validator.py` — dual grammar: plain labels vs angle names; suffixed labels also
+  vs roster (no ids / no roster / unknown id → hard-fail, unchanged strictness)
+- `multi_angle_orchestrator.py` — iterates `checked_angle_bindings`, substitutes slots before
+  the call, passes `shot_sheet_text` into `build_user_content`; result keys `Angle_S1` so
+  bound shots get distinct output files
+- `api_client.py` — `process_text(skip_token_floor, response_format)`; plan calls exempt the
+  2078 floor (Q4), json_schema passed through to the payload
+- `preflight.py` — `plan_mode` skips checkbox validation only; rewrite mode passes roster to
+  validation; URL/vision/config checks unchanged for both modes
+- `main.py` — `--plan` flag → `run_plan_mode` with `SHOT-PLAN` suffix
+- `cli_handler.py` — batch submission passes roster (suffixed labels no longer spurious-fail);
+  batch binding fan-out stays out of scope per Q5
+- `dry_run_estimator.py` — plan call folded into `--cost-only` (§3.8): PLAN_INSTRUCTION input
+  + one avg_output per file
+- `preflight.py`/`payload_builder.py` — unchanged API; payload part-1 carries scene + shot
+  sheet text as wired in Phase 1
+
+### Template assets
+- All 17 templates converted `.txt` → `.md` with frontmatter (§3.4): `id`, `label`,
+  `families` (transcribed from NEW.md, spelling normalised — Q14; `NEW.md` untouched and
+  skipped), `transform`, `min_source_size`, `subject_bound`, `subject_arity` (Q20),
+  `azimuth_delta`/`height_delta` (Q8), plus `shot_size` — a required completion: §3.5's
+  "target vs source" rule needs a per-template target size, and Q8's schema had no field
+  for it. Subject-bound bodies address `{subject}`/`{subject_a}`/`{subject_b}`; prose
+  otherwise identical to Phase 2
+- Family authoring highlights: OTS/Two_Shot bound with arity 2 (ordered pairs for reverse
+  shots — the face_visible gate is directional; unordered otherwise); POV floored to
+  novel_view (it asks the image model to invent the character's view — exactly the
+  additive-geometry failure the plan exists to kill); Birds_Eye height_delta 2 → never
+  pre-ticked from ground sources
+
+### Plan-vs-rules decision (documented)
+§3.7's format example pre-ticks "Over The Shoulder — S1 over S2" under Coverage while §3.5
+says 180° reverse → novel_view → never pre-ticked (and the example's own shot sheet has the
+opposing subject face_visible=false). §3.5 rules win — the example is a format illustration,
+acceptance 6 is the binding text.
+
+### Verification (§3.9) — ALL PASSED on live runs
+- `--plan` live ×3: strict json_schema accepted; atomic promotion; outputs at
+  `USER-FILES/05.OUTPUT/260826_125901/130003/130445_..._SHOT-PLAN/` (125901 deleted after the
+  id-pattern fix). Scene classification varied (vehicle_exterior → dialogue_3plus) at temp 0.2
+  — expected model variance, both defensible for the 5-person train-yard scene
+- Rewrite pipeline on enriched MD live: 7/7 ticked shots, bound descriptions substituted
+  ("the man in the dark overcoat and wide-brimmed hat"), zero ID leaks, every prompt ends
+  with the preservation clause, no detail absent from scene text + image
+- Offline classifier battery: vehicle_interior → vehicle shots only; ground-level solo never
+  pre-ticks Birds_Eye/Crane; tight CU never pre-ticks Wide; 3-subject roster → 3 close-ups
+- No-shot-sheet MD regression: parse identical to pre-Phase-3 (plain labels, no binding)
+- `--plan` failure (404 URL): exit 1, zero deliverables, no directory (Q16)
+- `04.INPUT/` sha256 byte-identical before/after every `--plan` run
+- `add-multi-checkboxes` (external repo) fixed + verified live: 17 angles, `NEW.md` skipped,
+  corrected path; committed there as `be53ca3` ("feat: load .md templates, skip NEW.md,
+  env/CLI source override") — `--source` CLI / `ANGLE_TEMPLATES_DIR` env override the yaml
+  default (Q10)
+
+### Questions resolved this session
+Q19–Q22 in `USER-FILES/07.TEMP/questions.md` (all recommended options): Q19 plan accepts both
+input shapes (preflight skips checkbox validation in plan mode); Q20 `subject_arity` frontmatter;
+Q21 code-side substitution; Q22 malformed shot sheet hard-fails.
+
+### Git state — committed
+- `feature/vision-payload-and-shot-planner` holds the committed Phase 3 work: 5 new modules,
+  10 modified, 17 template `.md` added, 17 `.txt` deleted (see git log for the commit hash).
+  External repo committed separately as `be53ca3`.
+- TODO.md wiped clean at phase wrap-up — Phase 4 session starts from a blank TODO.
+
+### Codebase Stats (as of 2026-08-26, post-Phase 3)
+- 40 Python files in `src/`, 4,919 total lines (+777 from Phase 1/2 baseline)
+- 0 syntax errors, 0 print(), 0 TODO/FIXME in src/
+- Over 250-line soft limit: `cli_handler.py` (265) — pre-existing, known, not blocking
+- All new files ≤ 167 lines; `md_input_parser.py` split back under the limit (201)
+
+### Next Phase
+- Phase 4 — Accounting and caching. Entry gate met (Phases 1–3 verified live).
+
 ## Last Session Summary (2026-08-26) — Phase 2: Prompt Quality
 
 ### Feature Implementation — ✅ COMPLETE (all tasks verified against live API)

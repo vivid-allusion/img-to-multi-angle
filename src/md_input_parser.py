@@ -1,16 +1,19 @@
 """MD file parser for multi-angle reframing feature."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Tuple
 from natsort import natsorted
 from loguru import logger
+
+from .shot_sheet import ShotSheet, extract_shot_sheet
 
 MD_IMAGE_PATTERN = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 MD_LINK_PATTERN = re.compile(r"!?\[[^\]]*\]\([^)]+\)")
 URL_PATTERN = re.compile(r"https?://|www\.", re.IGNORECASE)
 CHECKBOX_PATTERN = re.compile(r"^-\s\[[ xX]\]\s.+$")
+SUBJECT_ID_PATTERN = re.compile(r"\bS\d+\b")
 
 
 @dataclass
@@ -22,6 +25,9 @@ class ParsedMdInput:
     ref_images: List[str]
     checked_angles: List[str]
     all_checkbox_lines: List[str]
+    shot_sheet: Optional[ShotSheet] = None
+    shot_sheet_text: Optional[str] = None
+    checked_angle_bindings: List[Tuple[str, List[str]]] = field(default_factory=list)
 
 
 def discover_md_files(input_dir: Path) -> List[Path]:
@@ -53,19 +59,33 @@ def _is_checkbox_line(line: str) -> bool:
     return bool(CHECKBOX_PATTERN.match(line.strip()))
 
 
-def _parse_checkbox_line(line: str) -> tuple[str, bool]:
-    """Parse a checkbox line into (angle_name, is_checked).
+def _parse_checkbox_line(line: str) -> tuple[str, List[str], bool]:
+    """Parse a checkbox line into (angle_name, subject_ids, is_checked).
+
+    Labels may carry a subject suffix after an em dash (Q15 dual grammar):
+        "Close Up — S1 (older man in dark overcoat)"
+        "Over The Shoulder — S1 over S2"
+    Plain labels (generic tool) yield an empty subject_ids list.
 
     Args:
-        line: Raw checkbox line like '- [x] Birds Eye View'
+        line: Raw checkbox line like '- [x] Close Up — S1 (older man)'
 
     Returns:
-        Tuple of (angle_name, is_checked)
+        Tuple of (normalized_angle_name, subject_ids, is_checked)
     """
     stripped = line.strip()
     is_checked = stripped.startswith("- [x]") or stripped.startswith("- [X]")
-    angle_name = stripped[5:].strip()
-    return angle_name, is_checked
+    label = stripped[5:].strip()
+
+    if " — " in label:
+        angle_part, subject_part = label.split(" — ", 1)
+        subject_ids = SUBJECT_ID_PATTERN.findall(subject_part)
+    else:
+        angle_part = label
+        subject_ids = []
+
+    normalized = angle_part.replace(" ", "_")
+    return normalized, subject_ids, is_checked
 
 
 def _is_skippable_line(line: str) -> bool:
@@ -146,12 +166,13 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
 
     checked_angles = []
     all_checkbox_labels = []
+    checked_angle_bindings = []
     for cb_line in checkbox_lines:
-        angle_name, is_checked = _parse_checkbox_line(cb_line)
-        normalized = angle_name.replace(" ", "_")
-        all_checkbox_labels.append(normalized)
+        angle_name, subject_ids, is_checked = _parse_checkbox_line(cb_line)
+        all_checkbox_labels.append(angle_name)
         if is_checked:
-            checked_angles.append(normalized)
+            checked_angles.append(angle_name)
+            checked_angle_bindings.append((angle_name, subject_ids))
 
     ref_images = []
     for line in ref_image_lines:
@@ -159,10 +180,13 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
         if match:
             ref_images.append(match.group(2))
 
+    shot_sheet, shot_sheet_text = extract_shot_sheet(content, file_path.name)
+
     logger.info(
         f"Parsed {file_path.name}: scene={len(scene)} chars, "
         f"original_image=1, checkboxes={len(checkbox_lines)}, "
-        f"checked={len(checked_angles)}, ref_images={len(ref_images)}"
+        f"checked={len(checked_angles)}, ref_images={len(ref_images)}, "
+        f"shot_sheet={'yes' if shot_sheet else 'no'}"
     )
 
     return ParsedMdInput(
@@ -171,4 +195,7 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
         ref_images=ref_images,
         checked_angles=checked_angles,
         all_checkbox_lines=checkbox_lines,
+        shot_sheet=shot_sheet,
+        shot_sheet_text=shot_sheet_text,
+        checked_angle_bindings=checked_angle_bindings,
     )

@@ -166,12 +166,14 @@ class ProcessCommand:
                 "dataset_c": parsed.ref_images,
                 "checked_angles": parsed.checked_angles,
                 "checkbox_lines": parsed.all_checkbox_lines,
+                "parsed": parsed,
             })
 
         from .checkbox_validator import validate_checkboxes
         available_angles = set(angles.keys())
         for item in md_items:
-            validate_checkboxes(item["checkbox_lines"], available_angles, item["filename"])
+            roster = {s.id for s in item["parsed"].shot_sheet.subjects} if item["parsed"].shot_sheet else None
+            validate_checkboxes(item["checkbox_lines"], available_angles, item["filename"], roster=roster)
 
         logger.info(f"Loaded {len(md_items)} MD files, {len(angles)} angles")
 

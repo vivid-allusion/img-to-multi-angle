@@ -34,6 +34,12 @@ def parse_arguments():
         help="Estimate costs only using token counting API",
     )
     parser.add_argument(
+        "--plan",
+        action="store_true",
+        help="Generate adaptive shot sheets + checkbox lists (one vision call per file) "
+        "into a SHOT-PLAN output directory; never writes into 04.INPUT",
+    )
+    parser.add_argument(
         "--list-profiles", action="store_true", help="List available profiles and exit"
     )
     parser.add_argument(
@@ -194,6 +200,13 @@ def main():
     md_files, input_dir = discover_mds(args)
     if not md_files:
         logger.warning(f"No MD files found in {args.input_dir or 'USER-FILES/04.INPUT/'}")
+        return
+
+    if args.plan:
+        output_dir = get_output_directory(config, suffix="SHOT-PLAN")
+        from .shot_planner import run_plan_mode
+
+        run_plan_mode(config, md_files, output_dir)
         return
 
     output_dir = get_output_directory(config, suffix="MULTI-ANGLE-MD")

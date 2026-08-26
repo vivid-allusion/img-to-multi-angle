@@ -27,7 +27,12 @@ def _build_system_message(system: str, use_cache: bool) -> Dict[str, Any]:
     return {"role": "system", "content": system}
 
 
-def _build_api_payload(user_content: List[Dict[str, Any]], config: Dict[str, Any], system_message: Dict[str, Any]) -> Dict[str, Any]:
+def _build_api_payload(
+    user_content: List[Dict[str, Any]],
+    config: Dict[str, Any],
+    system_message: Dict[str, Any],
+    response_format: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Build the API request payload."""
     api_payload = {
         "model": config["model"],
@@ -42,6 +47,9 @@ def _build_api_payload(user_content: List[Dict[str, Any]], config: Dict[str, Any
 
     if "max_tokens" in config:
         api_payload["max_tokens"] = config["max_tokens"]
+
+    if response_format:
+        api_payload["response_format"] = response_format
 
     if "options" in config:
         for key, value in config["options"].items():
@@ -77,17 +85,20 @@ def process_text(
     config: Dict[str, Any],
     use_cache: bool = False,
     system_prompt: Optional[str] = None,
+    skip_token_floor: bool = False,
+    response_format: Optional[Dict[str, Any]] = None,
 ) -> tuple[str, Dict[str, Any]]:
     """Send a user message to OpenRouter and verify the response.
 
     Raises:
         RuntimeError: If the response text is empty or prompt_tokens falls
-            below the configured min_prompt_tokens floor.
+            below the configured min_prompt_tokens floor. skip_token_floor
+            exempts non-rewrite calls (--plan, Q4).
     """
     system = system_prompt if system_prompt else build_system_prompt(config)
 
     system_message = _build_system_message(system, use_cache)
-    api_payload = _build_api_payload(user_content, config, system_message)
+    api_payload = _build_api_payload(user_content, config, system_message, response_format)
 
     try:
         logger.info(f"Calling API with model: {api_payload['model']}")
@@ -109,17 +120,20 @@ def process_text(
             raise RuntimeError("API returned empty response text — aborting run")
 
         prompt_tokens = usage_data.get("input_tokens", 0)
-        floor = config.get("min_prompt_tokens")
-        if floor is None:
-            logger.warning(
-                "min_prompt_tokens is not set — token floor check skipped. "
-                "Set it to ~50% of the observed prompt_tokens after the first live run."
-            )
-        elif prompt_tokens < floor:
-            raise RuntimeError(
-                f"prompt_tokens ({prompt_tokens}) below min_prompt_tokens floor ({floor}) — "
-                "payload regression suspected, aborting run"
-            )
+        if skip_token_floor:
+            logger.info(f"prompt_tokens ({prompt_tokens}) — floor check exempt (plan/selftest call)")
+        else:
+            floor = config.get("min_prompt_tokens")
+            if floor is None:
+                logger.warning(
+                    "min_prompt_tokens is not set — token floor check skipped. "
+                    "Set it to ~50% of the observed prompt_tokens after the first live run."
+                )
+            elif prompt_tokens < floor:
+                raise RuntimeError(
+                    f"prompt_tokens ({prompt_tokens}) below min_prompt_tokens floor ({floor}) — "
+                    "payload regression suspected, aborting run"
+                )
 
     except Exception as e:
         error_type = type(e).__name__

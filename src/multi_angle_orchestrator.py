@@ -13,6 +13,7 @@ from .angle_loader import load_angle_templates
 from .user_message_template import load_user_message_template, render_user_message
 from .payload_builder import build_user_content
 from .api_client import process_text, build_system_prompt
+from .subject_binding import substitute_subject
 from .multi_angle_output_saver import save_angle_outputs
 from .data_models import ProcessingResult, UsageData
 from .cost_calculator import calculate_cost
@@ -106,14 +107,14 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                 cost=0.0,
             )
 
-        logger.info(f"Processing: {md_path.name} ({len(parsed.checked_angles)} of {len(self.angles)} angles)")
+        logger.info(f"Processing: {md_path.name} ({len(parsed.checked_angle_bindings)} of {len(self.angles)} angles)")
 
         system_prompt = build_system_prompt(self.config)
 
         angle_results = {}
         total_usage = {}
-        for angle_name in parsed.checked_angles:
-            angle_text = self.angles[angle_name]
+        for angle_name, subject_ids in parsed.checked_angle_bindings:
+            angle_text = substitute_subject(self.angles[angle_name], subject_ids, parsed.shot_sheet)
             user_msg = render_user_message(self.um_template, parsed.original_image, parsed.ref_images, angle_text)
 
             try:
@@ -122,6 +123,7 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                     original_image=parsed.original_image,
                     ref_images=parsed.ref_images,
                     angle_text=user_msg,
+                    shot_sheet=parsed.shot_sheet_text,
                 )
                 response_text, usage_data = process_text(
                     user_content, client, self.config, self.use_cache, system_prompt=system_prompt
@@ -129,7 +131,10 @@ class MultiAngleOrchestrator(BaseOrchestrator):
             except Exception as e:
                 raise FileProcessingError(f"{md_path.name} angle '{angle_name}': {e}") from e
 
-            angle_results[angle_name] = response_text
+            result_key = (
+                angle_name if not subject_ids else f"{angle_name}_{'_'.join(subject_ids)}"
+            )
+            angle_results[result_key] = response_text
 
             if usage_data:
                 total_usage = usage_data
