@@ -149,12 +149,11 @@ class FieldValidator:
             return ["cache_config.enabled"]
 
         if cache_config["enabled"]:
-            required_cache = {"cache_system_prompt", "cache_ttl", "report_cache_metrics"}
-            for field in required_cache:
-                if field not in cache_config:
-                    missing.append(f"cache_config.{field}")
-                elif not cache_config[field] and cache_config[field] is not False:
-                    missing.append(f"cache_config.{field} (empty value)")
+            ttl = cache_config.get("cache_ttl")
+            if ttl is None or ttl == "":
+                missing.append("cache_config.cache_ttl (must be set when cache is enabled)")
+            elif ttl not in ("5m", "1h"):
+                missing.append("cache_config.cache_ttl (must be '5m' or '1h')")
 
         return missing
 

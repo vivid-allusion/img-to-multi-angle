@@ -186,8 +186,7 @@ def _apply_cache_config(config: Dict[str, Any], profile: Dict[str, Any]) -> None
 
     if 'cache_ttl' not in cache_config:
         raise ValueError("cache_ttl must be set when cache is enabled")
-    logger.info(f"Prompt caching enabled (TTL: {cache_config['cache_ttl']})")
-    logger.info("Expected savings: ~89% on system prompt tokens")
+    logger.info(f"Prompt caching enabled (TTL: {cache_config['cache_ttl']}) — breakpoint on the stable user prefix (scene + images)")
 
 
 def _apply_prompt_suffix(config: Dict[str, Any], profile: Dict[str, Any]) -> None:

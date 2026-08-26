@@ -11,19 +11,9 @@ def build_system_prompt(config: Dict[str, Any]) -> str:
     return config.get("system_prompt", "")
 
 
-def _build_system_message(system: str, use_cache: bool) -> Dict[str, Any]:
-    """Build system message dict, optionally with cache control."""
-    if use_cache:
-        return {
-            "role": "system",
-            "content": [
-                {
-                    "type": "text",
-                    "text": system,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-        }
+def _build_system_message(system: str) -> Dict[str, Any]:
+    """Build system message dict. No cache_control — the system block carries no
+    breakpoint (Q23); caching covers only the stable user prefix (part 4)."""
     return {"role": "system", "content": system}
 
 
@@ -60,22 +50,28 @@ def _build_api_payload(
 
 
 def _extract_usage_data(response) -> Dict[str, Any]:
-    """Extract token usage data from API response."""
+    """Extract token usage and the provider-reported billed cost (Q24)."""
     if not (hasattr(response, "usage") and response.usage):
         return {}
 
     usage = response.usage
+    cache_write = 0
     cache_read = 0
 
     if hasattr(usage, "prompt_tokens_details") and usage.prompt_tokens_details:
         details = usage.prompt_tokens_details
-        cache_read = getattr(details, "cached_tokens", 0)
+        cache_write = getattr(details, "cache_write_tokens", None) or 0
+        cache_read = getattr(details, "cached_tokens", None) or 0
+
+    raw_cost = getattr(usage, "cost", None)
+    cost = raw_cost if isinstance(raw_cost, (int, float)) else 0.0
 
     return {
         "input_tokens": getattr(usage, "prompt_tokens", 0),
         "output_tokens": getattr(usage, "completion_tokens", 0),
-        "cache_creation_input_tokens": 0,
+        "cache_creation_input_tokens": cache_write,
         "cache_read_input_tokens": cache_read,
+        "cost": cost,
     }
 
 
@@ -83,7 +79,6 @@ def process_text(
     user_content: List[Dict[str, Any]],
     client: OpenRouter,
     config: Dict[str, Any],
-    use_cache: bool = False,
     system_prompt: Optional[str] = None,
     skip_token_floor: bool = False,
     response_format: Optional[Dict[str, Any]] = None,
@@ -97,7 +92,7 @@ def process_text(
     """
     system = system_prompt if system_prompt else build_system_prompt(config)
 
-    system_message = _build_system_message(system, use_cache)
+    system_message = _build_system_message(system)
     api_payload = _build_api_payload(user_content, config, system_message, response_format)
 
     try:

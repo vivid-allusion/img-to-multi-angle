@@ -31,6 +31,7 @@ def build_user_content(
     angle_text: str,
     shot_sheet: Optional[str] = None,
     cache_breakpoint: bool = False,
+    cache_ttl: Optional[str] = None,
 ) -> List[Dict[str, object]]:
     """Return an ordered list of content parts for the user message.
 
@@ -38,7 +39,7 @@ def build_user_content(
     1. text      — scene description (and shot sheet, when Phase 3 lands)
     2. image_url — the original image, detail "original"
     3. image_url — each character-sheet reference, in order, detail "original"
-    4. text      — marker lines naming each image in order
+    4. text      — marker lines naming each image in order (the cache breakpoint)
     5. text      — the angle template (the only part that varies across calls)
     """
     scene_text = f"{scene}\n\n{shot_sheet}" if shot_sheet else scene
@@ -50,7 +51,9 @@ def build_user_content(
 
     marker: Dict[str, object] = {"type": "text", "text": _marker_text(ref_images)}
     if cache_breakpoint:
-        marker["cache_control"] = {"type": "ephemeral"}
+        if not cache_ttl:
+            raise ValueError("cache_breakpoint requires a cache_ttl")
+        marker["cache_control"] = {"type": "ephemeral", "ttl": cache_ttl}
     parts.append(marker)
 
     parts.append({"type": "text", "text": angle_text})

@@ -60,9 +60,7 @@ processing_options:
 # -----------------------------------------------------------------------------
 cache_config:
   enabled: false
-  cache_system_prompt: true
   cache_ttl: 5m
-  report_cache_metrics: true
 
 # -----------------------------------------------------------------------------
 # ESTIMATION PARAMETERS

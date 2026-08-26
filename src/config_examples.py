@@ -19,7 +19,5 @@ FIELD_EXAMPLES = {
     'save_batch_request_file': True,
     'check_interval_minutes': 5,
     'max_wait_hours': 24,
-    'cache_system_prompt': True,
-    'cache_ttl': '5m',
-    'report_cache_metrics': True
+    'cache_ttl': '5m'
 }

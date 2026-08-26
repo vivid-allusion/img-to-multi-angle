@@ -1,3 +1,78 @@
+## Last Session Summary (2026-08-26) — Phase 4: Accounting and Caching (plan complete)
+
+### Feature Implementation — ✅ COMPLETE (verified live)
+Phase 4 (`plan/phase_4.md`) landed on `feature/vision-payload-and-shot-planner`. This closes
+the whole 4-phase plan. Q23/Q24 answered (both recommended options) and recorded in
+`USER-FILES/07.TEMP/questions.md`; Q1–Q24 now locked.
+
+### Modules Modified (8)
+- `api_client.py` — `_extract_usage_data()` now also extracts `usage.cost` (provider-reported
+  billed cost, Q24) and `prompt_tokens_details.cache_write_tokens` (was hardcoded 0);
+  `process_text()` lost its `use_cache` param; `_build_system_message()` always emits a plain
+  string system message — no system-message cache_control (Q23)
+- `multi_angle_orchestrator.py` (252 — 2 over the soft limit; justified: §4.1/§4.4 mandate the
+  per-call accumulation loop and per-file cache gate live here, splitting would scatter one
+  cohesive flow) — §4.1: per-call usage now ACCUMULATES (`input/output/cache_creation/
+  cache_read/cost` summed, was `total_usage = usage_data` ≈ 1/17th of actual); realtime cost is
+  now the summed `usage.cost` (Q24) — `calculate_cost` import removed; §4.4: cache gate moved
+  per file onto `len(parsed.checked_angles) >= 2` (was all 17 templates), `cache_breakpoint`
+  + `cache_ttl` passed into `build_user_content`
+- `payload_builder.py` — `cache_ttl` param; breakpoint marker emits
+  `{"type": "ephemeral", "ttl": ...}`; breakpoint without ttl → `ValueError` (fail fast)
+- `config_validator.py` — deleted `cache_system_prompt`/`report_cache_metrics` from the
+  enabled-cache requirements (Q12); `cache_ttl` literal-validated against `5m`/`1h` (§4.3)
+- `config_examples.py` / `openrouter_config.yaml` — the two dead keys deleted; yaml keeps
+  `cache_config: {enabled: false, cache_ttl: 5m}`
+- `preflight.py` — `_warn_dead_cache_keys()` deleted (the keys are gone, not just unread)
+- `profile_manager.py` — stale "~89% on system prompt tokens" log replaced (no system
+  breakpoint anymore)
+- `cost_calculator.py` — dead `UsageStats` class deleted; survives only for `--cost-only`
+  estimates and the batch path (Q24)
+- `shot_planner.py` — call site updated for the `process_text` signature change
+
+### Cache measurement (§4.5 — verify, don't assume) — caching does NOT pay
+Reference file, 17 ticked angles, identical payloads:
+- Cache OFF: **$0.0770, 192.7 s** | Cache ON: **$0.0814, 174.8 s** → caching costs ~5.7% MORE
+- Probe evidence: first cached call writes 4559 tokens (image-heavy prefix) at the cache-write
+  premium; 16 reads don't offset it for gemini-3.7-flash on OpenRouter
+- Two cache-on runs hung ~20 min on the first cached call (provider-side stall with
+  `cache_control` present; probes with `timeout_ms` completed fine minutes later)
+- Per §4.5: `cache_config.enabled` left **false**; measurement recorded here and in TODO
+- The plumbing stays: if a future model shows read discounts beating the write premium, flipping
+  `enabled: true` is the whole config change
+
+### Verification
+- `--selftest` PASS (live); baseline live run 17/17, atomic promotion, $0.0770 provider-reported
+- Accumulation unit-checked offline (17 fake calls → correct sums incl. cost)
+- `_extract_usage_data` unit-checked incl. None/UNSET cost and missing details
+- `--cost-only` ($0.0282, image-token warning intact), `--list-profiles`, `--dry-run` all OK
+- Acceptance 7 met: per-file cost is now the true sum of its angle calls (was ~1/17th)
+- Acceptance 8: all five §0.3 dead-key defects resolved (3 cache keys + cache pricing + usage)
+
+### Questions resolved this session
+Q23 (drop the system-prompt breakpoint — cache only the stable user prefix) and Q24 (trust
+`usage.cost` for real-run reports; local pricing survives only for `--cost-only`; no `cache`
+pricing block). Both recommended options, both locked.
+
+### TODO archived at wrap-up (then wiped)
+- `retry_config`/`stream`/`processing_options.*` validated but never read; OpenRouter client
+  built with no `timeout_ms` (the 20-min cache hang is the observed cost — needs its own task)
+- `summary_report.md` references COST.md that nothing writes
+- Batch path keeps local `calculate_cost` with the §4.2 double-count + pre-Q23 system
+  cache_control — standby per Q5, needs its own task if batch is revived
+
+### Git state
+Phase 4 committed to `feature/vision-payload-and-shot-planner` (see git log). The 4-phase plan
+is complete — no next phase.
+
+### Codebase Stats (as of 2026-08-26, post-Phase 4)
+- 40 Python files in `src/`, 4,879 total lines (net −40 vs Phase 3)
+- 0 syntax errors, 0 print(), 0 TODO/FIXME in src/
+- Over 250-line soft limit: `cli_handler.py` (265, pre-existing known), `multi_angle_orchestrator.py`
+  (252, justified above)
+
+---
+
 ## Last Session Summary (2026-08-26) — Phase 3: Adaptive Shot Planning
 
 ### Feature Implementation — ✅ COMPLETE (all tasks verified against live API)

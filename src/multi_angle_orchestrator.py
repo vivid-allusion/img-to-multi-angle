@@ -16,7 +16,6 @@ from .api_client import process_text, build_system_prompt
 from .subject_binding import substitute_subject
 from .multi_angle_output_saver import save_angle_outputs
 from .data_models import ProcessingResult, UsageData
-from .cost_calculator import calculate_cost
 from .exceptions import FileProcessingError
 
 
@@ -36,7 +35,6 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         self.user_message_path = Path("USER-FILES/01.CONFIG/user_message.md")
         self.angles: Dict[str, str] = {}
         self.um_template: str = ""
-        self.use_cache: bool = False
 
     def process_batch(
         self, files: List[Path], client: OpenRouter, output_dir: Path
@@ -63,8 +61,6 @@ class MultiAngleOrchestrator(BaseOrchestrator):
 
         self.angles = load_angle_templates(self.angle_template_dir)
         self.um_template = load_user_message_template(self.user_message_path)
-        cache_config = self.config.get("cache_config", {})
-        self.use_cache = cache_config.get("enabled", False) and len(self.angles) >= 2
 
         for md_path in files:
             result = self._process_single_file(md_path, client, output_dir)
@@ -109,10 +105,16 @@ class MultiAngleOrchestrator(BaseOrchestrator):
 
         logger.info(f"Processing: {md_path.name} ({len(parsed.checked_angle_bindings)} of {len(self.angles)} angles)")
 
+        cache_config = self.config.get("cache_config", {})
+        use_cache = cache_config.get("enabled", False) and len(parsed.checked_angles) >= 2
+        cache_ttl = cache_config.get("cache_ttl") if use_cache else None
+        if use_cache:
+            logger.info(f"Prompt caching active for {md_path.name} (TTL: {cache_ttl})")
+
         system_prompt = build_system_prompt(self.config)
 
         angle_results = {}
-        total_usage = {}
+        total_usage: Dict[str, Any] = {}
         for angle_name, subject_ids in parsed.checked_angle_bindings:
             angle_text = substitute_subject(self.angles[angle_name], subject_ids, parsed.shot_sheet)
             user_msg = render_user_message(self.um_template, parsed.original_image, parsed.ref_images, angle_text)
@@ -124,9 +126,11 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                     ref_images=parsed.ref_images,
                     angle_text=user_msg,
                     shot_sheet=parsed.shot_sheet_text,
+                    cache_breakpoint=use_cache,
+                    cache_ttl=cache_ttl,
                 )
                 response_text, usage_data = process_text(
-                    user_content, client, self.config, self.use_cache, system_prompt=system_prompt
+                    user_content, client, self.config, system_prompt=system_prompt
                 )
             except Exception as e:
                 raise FileProcessingError(f"{md_path.name} angle '{angle_name}': {e}") from e
@@ -137,22 +141,24 @@ class MultiAngleOrchestrator(BaseOrchestrator):
             angle_results[result_key] = response_text
 
             if usage_data:
-                total_usage = usage_data
+                for key in (
+                    "input_tokens",
+                    "output_tokens",
+                    "cache_creation_input_tokens",
+                    "cache_read_input_tokens",
+                    "cost",
+                ):
+                    total_usage[key] = total_usage.get(key, 0) + usage_data.get(key, 0)
 
         saved_files = save_angle_outputs(output_dir, input_name, angle_results, parsed.original_image, parsed.ref_images)
 
         usage = UsageData(
             input_tokens=total_usage.get("input_tokens", 0),
             output_tokens=total_usage.get("output_tokens", 0),
+            cache_creation_tokens=total_usage.get("cache_creation_input_tokens", 0),
+            cache_read_tokens=total_usage.get("cache_read_input_tokens", 0),
             filename=md_path.name,
             model=self.config.get("model"),
-        )
-
-        cost = calculate_cost(
-            usage_data=total_usage,
-            config=self.config,
-            model=str(self.config.get("model", "")),
-            batch_mode=self.config.get("batch_mode", False),
         )
 
         return ProcessingResult(
@@ -160,7 +166,7 @@ class MultiAngleOrchestrator(BaseOrchestrator):
             success=True,
             output_path=saved_files[0] if saved_files else None,
             usage=usage,
-            cost=cost,
+            cost=total_usage.get("cost", 0.0),
         )
 
     def generate_processing_reports(

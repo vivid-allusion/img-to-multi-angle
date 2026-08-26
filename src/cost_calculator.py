@@ -1,39 +1,8 @@
 #!/usr/bin/env python3
-"""Cost calculation logic for API usage."""
+"""Local cost estimation for pre-run estimates (--cost-only) and the batch
+path. Real-run reports use the provider-reported `usage.cost` (Q24)."""
 
-from typing import Dict, List, Any
-from dataclasses import dataclass, field
-
-
-@dataclass
-class UsageStats:
-    """Track usage statistics for API calls."""
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cache_creation_tokens: int = 0
-    cache_read_tokens: int = 0
-    file_costs: List[Dict[str, Any]] = field(default_factory=list)
-    
-    def add_usage(self, usage_data: Dict[str, Any], cost: float):
-        """Add usage data from a single API call."""
-        self.input_tokens += usage_data.get('input_tokens', 0)
-        self.output_tokens += usage_data.get('output_tokens', 0)
-        self.cache_creation_tokens += usage_data.get('cache_creation_input_tokens', 0)
-        self.cache_read_tokens += usage_data.get('cache_read_input_tokens', 0)
-        
-        self.file_costs.append({
-            'filename': usage_data.get('filename'),
-            'input_tokens': usage_data.get('input_tokens', 0),
-            'output_tokens': usage_data.get('output_tokens', 0),
-            'cache_creation_tokens': usage_data.get('cache_creation_input_tokens', 0),
-            'cache_read_tokens': usage_data.get('cache_read_input_tokens', 0),
-            'cost': cost
-        })
-    
-    @property
-    def total_input_tokens(self) -> int:
-        """Total input tokens including cache operations."""
-        return self.input_tokens + self.cache_creation_tokens + self.cache_read_tokens
+from typing import Dict, Any
 
 
 def _calculate_tiered_input_cost(tokens: int, model_pricing: Dict, total_input: int) -> float:

@@ -102,7 +102,6 @@ def plan_file(
         user_content,
         client,
         config,
-        use_cache=False,
         system_prompt=PLAN_SYSTEM_PROMPT,
         skip_token_floor=True,
         response_format=RESPONSE_FORMAT,

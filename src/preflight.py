@@ -58,8 +58,6 @@ def run_preflight(
 
     _check_model_vision(config, client)
 
-    _warn_dead_cache_keys(config)
-
     return PreflightReport(
         files_validated=len(parsed_files),
         urls_checked=len(url_cache),
@@ -129,13 +127,3 @@ def _check_model_vision(config: Dict[str, Any], client: OpenRouter) -> None:
         )
 
     logger.info(f"Model '{model_id}' accepts image input")
-
-
-def _warn_dead_cache_keys(config: Dict[str, Any]) -> None:
-    """Warn loudly on cache_config keys that have no read site (Phase 4 resolves)."""
-    cache_config = config.get("cache_config", {})
-    for key in ("cache_system_prompt", "report_cache_metrics"):
-        if key in cache_config:
-            logger.warning(
-                f"cache_config.{key} is validated but never read — Phase 4 will implement or delete it"
-            )
