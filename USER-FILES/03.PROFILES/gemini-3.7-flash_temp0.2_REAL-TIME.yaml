@@ -2,7 +2,7 @@
 # PROFILE METADATA
 # =============================================================================
 metadata:
-  profile_name: gemini-3.7-flash_temp0.5_REAL-TIME
+  profile_name: gemini-3.7-flash_temp0.2_REAL-TIME
   description: Google's Gemini 3.7 Flash multimodal model for fast agentic workflows and multi-step reasoning
   created: '2026-08-24'
   version: '1.0'
@@ -48,14 +48,13 @@ batch_mode: false
 # temperature: 0.9  # High creativity
 #
 # Alternative max_tokens:
-# max_tokens: 4000   # Shorter responses, lower cost
-# max_tokens: 8000   # Current setting
+# max_tokens: 4000   # Current setting — 60-90 word prompts (Phase 2)
 # max_tokens: 16000  # Longer responses, higher cost
 # max_tokens: 65536  # Max supported by gemini-3.7-flash
 #
 parameters:
-  temperature: 0.5
-  max_tokens: 8000
+  temperature: 0.2
+  max_tokens: 4000
   # Measured 2026-08-25 live run: prompt_tokens 4156-4206 per angle call.
   # Floor = 50% of lowest observed. See AGENTS.md session summary.
   min_prompt_tokens: 2078

@@ -1,3 +1,60 @@
+## Last Session Summary (2026-08-26) — Phase 2: Prompt Quality
+
+### Feature Implementation — ✅ COMPLETE (all tasks verified against live API)
+Phase 2 (`plan/phase_2.md`) landed on `feature/vision-payload-and-shot-planner`. No `src/`
+code changes shipped — this phase was pure prompt-asset and profile work.
+
+- `system_prompt.md` — preservation clause added as a hard rule + `Your Task` bullet (§2.2);
+  all few-shot examples carry the clause; new Example 5 (TWO_SHOT, no character sheets,
+  unnamed subjects, descriptive positional anchors); "on the line of eyesight" → "at eye
+  level" (§2.5); explicit 60–90 word target (§2.6 + Q18 answer); scene-text factual-only
+  guard against convert/stylise/restyle/improve instructions (§2.8); character-sheet bullet
+  now fires only when refs exist (§2.5)
+- `angle-templates/` (17 files) — de-motioned Rack_Focus / Handheld_Shaky_Cam /
+  Tracking_Dolly_Shot / Crane_Jib_Shot per §2.3 table; stripped style/lighting language
+  per §2.4 (Close_Up lighting sentence, Macro_Shot style stack, plus "cinematic"/"dramatic"
+  and vibe-lists across the other 15). No `prompt_suffix` key added (Q7 answer)
+- Profile — renamed `gemini-3.7-flash_temp0.5_REAL-TIME.yaml` →
+  `gemini-3.7-flash_temp0.2_REAL-TIME.yaml`, `temperature: 0.2`, `metadata.profile_name`
+  updated (§2.7); output dir naming derives from the value so no code change
+
+### Deviation from plan — max_tokens 4000, not 1000 (measured, not guessed)
+gemini-3.7-flash is a thinking model whose reasoning tokens count against `max_tokens`,
+and reasoning **cannot be disabled**: OpenRouter rejects `reasoning: {"effort": "none"}`
+(400 "Reasoning is mandatory for this endpoint") and the SDK silently strips
+`reasoning: {"enabled": false}` (its `ChatRequestReasoning` only knows `effort`/`summary`).
+At max_tokens 1000 the model burned the entire budget on reasoning → truncated mid-sentence
+prompts and one empty response (which the Phase 1 hard-failure machinery caught exactly as
+designed: run aborted, zero deliverables, `_FAILED` dir). Set 4000 instead; the 60–90 word
+rule in `system_prompt.md` is the real length constraint.
+
+### Verification (§2.9 acceptance) — ALL PASSED on live run
+- `--selftest` PASS; live run 17/17 angles, atomic promotion →
+  `USER-FILES/05.OUTPUT/260826_102306_gemini-3.7-flash_RT_temp0.2_MULTI-ANGLE-MD/`
+- All 17 prompts: end with the preservation clause; 79–90 words (in range); no template-borne
+  style/lighting; no motion/focus-pull/transition requests; concrete positional anchors
+  everywhere (never bare "the subject"); no "photorealistic" conversion framing
+- Independent vision-call description of the source image confirms every prompt detail exists
+  in the pixels (snowy birch forest, wooden platform, crate-laden flatcar with stencilled
+  letters, two draft horses, man in dark overcoat + wide-brimmed hat at frame left, worker
+  holding rope, lanterns, steaming locomotive, twilight) — no fabrications (acceptance 3)
+- `260826_101231_..._FAILED/` and `260826_101646_.../` dirs in 05.OUTPUT are diagnostics from
+  the truncation investigation (kept per Q2 policy)
+
+### Questions resolved this session
+- Q14–Q18 answered in `USER-FILES/07.TEMP/questions.md`: families live in template frontmatter
+  (Phase 3); both checkbox grammars accepted; `--plan` gets prime-directive staging; `--plan`
+  copies input MD verbatim; 60–90 word target. Q1–Q13 were already answered and locked.
+
+### Next Phase
+- Phase 3 — Adaptive shot planning (`--plan` mode). Entry gate met (Phases 1–2 verified live).
+
+### Codebase Stats (as of 2026-08-26)
+- 35 Python files in `src/`, unchanged from Phase 1 (4,142 lines — verify)
+- 17 angle templates rewritten (all single-sentence framing-only), 1 profile renamed
+
+---
+
 ## Last Session Summary (2026-08-25) — Phase 1: Real Images + Hard Failure Guarantees
 
 ### Feature Implementation — ✅ COMPLETE (all tasks verified, NOT blocked)

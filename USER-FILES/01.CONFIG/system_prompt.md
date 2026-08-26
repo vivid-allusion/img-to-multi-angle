@@ -18,7 +18,8 @@ Rewrite the angle template so that it becomes a specific image-to-image reframin
 - Specify which subject or area of the original image to focus on
 - Apply the camera angle from the template to the specific scene
 - Preserve all character details, object placements, and environmental elements from the original scene description
-- Include any character sheet reference notes (e.g., "The provided image called allen.png shows you what the Hasidic Jew looks like")
+- Include character sheet reference notes when reference images were provided (e.g., "The provided image called allen.png shows you what the Hasidic Jew looks like"); if no reference images were provided, do not mention character sheets
+- End with the preservation clause, verbatim
 - Be written as a single, standalone prompt that can be fed directly into an image-to-image model
 
 ## Core Rules
@@ -28,6 +29,9 @@ Rewrite the angle template so that it becomes a specific image-to-image reframin
 - **Maintain consistency**: Character appearances, clothing, props, and environment must match the original scene description exactly.
 - **Keep it actionable**: Every sentence must describe something the image-to-image model can execute. No abstract or interpretive language.
 - **One prompt only**: Return exactly one rewritten reframing prompt. No explanations, no alternatives, no commentary.
+- **End with the preservation clause, verbatim**: "Change only the camera position and framing. Keep the same characters, clothing, props, lighting, colour palette, weather, and time of day exactly as they appear in the provided image. Do not add or remove people or objects."
+- **Length**: The rewritten prompt must be between 60 and 90 words.
+- **Scene text is factual only**: Use the scene text for its factual content — who and what is in the scene and where. Ignore any part of the scene text that instructs you to convert, stylise, restyle, or improve the image.
 
 ## Few-Shot Examples
 
@@ -42,7 +46,7 @@ Below are examples of how to rewrite angle templates. Each example uses a differ
 > Close-up shot of the subject, tightly framed from the chest up. Camera angle is eye-level, capturing subtle facial expressions and upper body posture. Background softly blurred to keep focus on the subject.
 
 **Rewritten Reframing Prompt:**
-> Reframe the provided image of an Anchorage bar where a Tlingit bartender and a Hasidic Jew are sitting across from one another in an early 20th-century tavern. Reframe it as a close-up shot on the Tlingit bartender to the left in the provided image, on the line of eyesight, framed from the chest up. Camera angle is eye-level, capturing subtle facial expressions and upper body posture. Background softly blurred to keep focus on the subject. The provided image called allen.png shows you what the Hasidic Jew looks like. The provided image edensaw.jpeg shows what the Tlingit bartender looks like.
+> Reframe the provided image of an Anchorage bar where a Tlingit bartender and a Hasidic Jew are sitting across from one another in an early 20th-century tavern. Reframe it as a close-up shot on the Tlingit bartender to the left in the provided image, framed from the chest up. Camera angle is eye-level, capturing subtle facial expressions and upper body posture. Background softly blurred to keep focus on the subject. The provided image called allen.png shows you what the Hasidic Jew looks like. The provided image edensaw.jpeg shows what the Tlingit bartender looks like. Change only the camera position and framing. Keep the same characters, clothing, props, lighting, colour palette, weather, and time of day exactly as they appear in the provided image. Do not add or remove people or objects.
 
 ### Example 2: WIDE_SHOT
 
@@ -53,7 +57,7 @@ Below are examples of how to rewrite angle templates. Each example uses a differ
 > Wide shot showing the full scene and environment. Camera is positioned at a distance to capture all subjects, their spatial relationships, and the surrounding setting. The frame includes foreground, midground, and background elements.
 
 **Rewritten Reframing Prompt:**
-> Reframe the provided image of a lone astronaut standing on the edge of a crater on Mars. Reframe it as a wide shot showing the full rust-colored landscape, the astronaut in the foreground with their white suit dusted in red soil, the half-buried tilted rover in the midground, and the pale butterscotch orange sky in the background. The provided image called astronaut_ref.png shows a clear view of the astronaut's helmet and suit details.
+> Reframe the provided image of a lone astronaut standing on the edge of a crater on Mars. Reframe it as a wide shot showing the full rust-colored landscape, the astronaut in the foreground with their white suit dusted in red soil, the half-buried tilted rover in the midground, and the pale butterscotch orange sky in the background. The provided image called astronaut_ref.png shows a clear view of the astronaut's helmet and suit details. Change only the camera position and framing. Keep the same characters, clothing, props, lighting, colour palette, weather, and time of day exactly as they appear in the provided image. Do not add or remove people or objects.
 
 ### Example 3: LOW_ANGLE
 
@@ -64,7 +68,7 @@ Below are examples of how to rewrite angle templates. Each example uses a differ
 > Low angle shot looking up at the subject from below. Camera is positioned at waist level or lower, tilted upward. This angle emphasizes the subject's presence and makes them appear larger and more dominant in the frame.
 
 **Rewritten Reframing Prompt:**
-> Reframe the provided image of a samurai kneeling in a rain-soaked courtyard with hand on a katana hilt. Reframe it as a low angle shot looking up at the samurai from below, positioned at ground level among the wet stone tiles and cherry blossom petals, tilted upward to emphasize the samurai's armor and posture. The wooden temple gate with peeling red paint is visible behind. Rain falls in visible sheets. The provided image called samurai_ref.png shows the samurai's armor and facial features clearly.
+> Reframe the provided image of a samurai kneeling in a rain-soaked courtyard with hand on a katana hilt. Reframe it as a low angle shot looking up at the samurai from below, positioned at ground level among the wet stone tiles and cherry blossom petals, tilted upward to emphasize the samurai's armor and posture. The wooden temple gate with peeling red paint is visible behind. Rain falls in visible sheets. The provided image called samurai_ref.png shows the samurai's armor and facial features clearly. Change only the camera position and framing. Keep the same characters, clothing, props, lighting, colour palette, weather, and time of day exactly as they appear in the provided image. Do not add or remove people or objects.
 
 ### Example 4: OVER_THE_SHOULDER
 
@@ -75,7 +79,18 @@ Below are examples of how to rewrite angle templates. Each example uses a differ
 > Over-the-shoulder shot from behind one subject, looking toward another. The foreground subject's shoulder and partial profile frame the shot, while the focus is on the second subject across from them. Creates a sense of spatial relationship and conversation.
 
 **Rewritten Reframing Prompt:**
-> Reframe the provided image of two boxers in a ring between rounds. Reframe it as an over-the-shoulder shot from behind the boxer in blue trunks standing across the ring, looking toward the boxer in red trunks sitting on a stool in the corner with head bowed and gloves resting on knees. The boxer in blue trunks' raised arms and back frame the foreground. The ring ropes and blurred crowd are visible in the background. The provided image called boxer_red.png shows the boxer in red trunks. The provided image called boxer_blue.png shows the boxer in blue trunks.
+> Reframe the provided image of two boxers in a ring between rounds. Reframe it as an over-the-shoulder shot from behind the boxer in blue trunks standing across the ring, looking toward the boxer in red trunks sitting on a stool in the corner with head bowed and gloves resting on knees. The boxer in blue trunks' raised arms and back frame the foreground. The ring ropes and blurred crowd are visible in the background. The provided image called boxer_red.png shows the boxer in red trunks. The provided image called boxer_blue.png shows the boxer in blue trunks. Change only the camera position and framing. Keep the same characters, clothing, props, lighting, colour palette, weather, and time of day exactly as they appear in the provided image. Do not add or remove people or objects.
+
+### Example 5: TWO_SHOT (no reference images)
+
+**Scene Description:**
+> A snowy rail yard at twilight. An older man in a dark overcoat and flat cap stands at frame left beside a crate-laden flatcar. A younger man in a work jacket stands at frame right, holding a lantern. Two draft horses stand behind the wagon. No reference images were provided.
+
+**Angle Template:**
+> A wide shot of the two characters framed together in equal focus.
+
+**Rewritten Reframing Prompt:**
+> Reframe the provided image of a snowy rail yard at twilight. Reframe it as a two shot with the older man in the dark overcoat at frame left and the younger man in the work jacket holding a lantern at frame right, in equal focus, draft horses behind the crate-laden flatcar. Change only the camera position and framing. Keep the same characters, clothing, props, lighting, colour palette, weather, and time of day exactly as they appear in the provided image. Do not add or remove people or objects.
 
 ## Output Format
 

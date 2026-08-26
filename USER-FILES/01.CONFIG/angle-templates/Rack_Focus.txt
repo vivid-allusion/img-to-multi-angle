@@ -1,1 +1,1 @@
-The camera focus shifts from the foreground to the background, smoothly transitioning sharpness from one subject to another, guiding the viewer's attention through depth.
+Shallow depth of field, sharp focus on the named subject, background thrown out of focus.
