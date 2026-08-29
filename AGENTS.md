@@ -1,3 +1,67 @@
+## Last Session Summary (2026-08-29) — Post-plan review fixes
+
+### Four defects found in review of the completed 4-phase plan — ✅ ALL FIXED
+
+**1. Pre-ticking ignored subject visibility (the one that mattered)**
+`shot_feasibility._entry()` only consulted `occluded` when `risk == "lateral"`; subtractive
+shots pre-ticked unconditionally. The 260826_130445 `--plan` run therefore pre-ticked Close Up /
+Extreme Close Up / Rack Focus on S3/S4/S5 — all `face_visible: false, occluded: true`. A punch-in
+on a hidden, faceless figure is the exact additive case the classifier exists to avoid.
+Fix: new `_pretick_ok()` applies to **any** subject-bound template — occluded subjects never
+pre-tick, and tight shots (`FACE_REQUIRED_SIZES = MCU/CU/ECU`) additionally require
+`face_visible`. Also fixes the C(n,2) `Two Shot` fan-out, since a pair needs both subjects usable.
+Measured against the real 5-subject sheet: **31 → 8 pre-ticked, 39 still offered** (nothing
+hidden, only unticked — the user can still tick anything).
+NOTE: the original plan text (§3.5) only specified the visibility gate under `lateral`; the
+implementation was faithful to the spec. The spec was wrong.
+
+**2. Subject-slot arity was unvalidated → raw placeholders could reach the image model**
+`checkbox_validator` verified subject ids against the roster but never against
+`template.subject_arity` (the metadata existed and only the planner used it). `Two Shot — S1`
+passed validation, then `substitute_subject` left literal `{subject_a}`/`{subject_b}` in the
+prompt. Reverse case too (`Close Up — S1 over S2` leaves `{subject}`). Reachable via the human
+edit step between `--plan` and the run.
+Fix: `validate_checkboxes()` takes an optional `templates` dict and rejects arity mismatches
+with a clear message; wired through `preflight.py` and `cli_handler.py` (batch path).
+
+**3. No backstop on unexpanded slots**
+Fix: `subject_binding._assert_filled()` raises `FileProcessingError` if any `{subject...}`
+survives substitution, naming the leftover slots. Defence in depth behind fix 2.
+
+**4. Dead Dataset B/C plumbing (loaded gun)**
+`user_message_template.py` still held `PLACEHOLDER_DATASET_B`/`_C` and both call sites still
+passed image URLs in, though `user_message.md` no longer contains those placeholders (no-op).
+Re-adding the placeholder would have injected URLs as **text** alongside the real image parts —
+silently resurrecting a variant of the original blind-model defect.
+Fix: placeholders and params deleted; `render_user_message(template, dataset_d)` is now
+two arguments, with a docstring saying why images must never be rendered here.
+
+### Files changed (8)
+`shot_feasibility.py`, `checkbox_validator.py`, `preflight.py`, `cli_handler.py`,
+`subject_binding.py`, `user_message_template.py`, `multi_angle_orchestrator.py`,
+`batch_request_builder.py`
+
+### Verification (all re-run after the fixes)
+- Arity: 2 mismatched labels REJECTED, 2 correct labels ACCEPTED
+- Slot backstop: both mismatch directions raise; both correct bindings expand fully
+- Pre-ticking: 31 → 8 on the real shot sheet, 39 offered either way
+- Live end-to-end (2 angles): promoted atomically; both prompts 83 words, clause present,
+  no braces, no URL-as-text
+- `--selftest` PASS (live), `--list-profiles`, `--cost-only`, `--dry-run` all PASS
+- Deliberate-failure tests (404 URL, text/html, payload integrity) all still abort with **zero
+  output directories created**
+- `compileall` clean; `cli_handler.py` now 270 lines (was 265 — still over the 250 soft limit,
+  pre-existing, tracked)
+
+### Still open (unchanged, previously archived)
+- `retry_config.max_retries` / `retry_config.timeout` / `processing_options.max_response_length`
+  validated but never read; no client `timeout_ms` (this is what let the cache probe hang ~20 min)
+- `summary_report.md` references a `COST.md` that nothing writes; "Profile: Unknown"
+- `stats["failed"]` / `stats["errors"]` are dead paths now that failures raise
+- Preflight failures surface as raw tracebacks rather than a clean one-line message
+
+---
+
 ## Last Session Summary (2026-08-26) — Phase 4: Accounting and Caching (plan complete)
 
 ### Feature Implementation — ✅ COMPLETE (verified live)

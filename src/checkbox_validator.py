@@ -2,16 +2,17 @@
 
 Q15 dual grammar: plain angle-name labels validate against templates only;
 suffixed labels ("<Angle> — <subject ids>") additionally validate the ids
-against the shot-sheet roster. Failures stay hard (sys.exit).
+against the shot-sheet roster, and the id count against the template's
+subject_arity. Failures stay hard (sys.exit).
 """
 
 import re
 import sys
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from loguru import logger
 
-from .angle_loader import get_available_angle_names
+from .angle_loader import AngleTemplate, get_available_angle_names
 
 SUBJECT_ID_PATTERN = re.compile(r"\bS\d+\b")
 
@@ -21,6 +22,7 @@ def validate_checkboxes(
     available_angles: Set[str],
     filename: str,
     roster: Optional[Set[str]] = None,
+    templates: Optional[Dict[str, AngleTemplate]] = None,
 ) -> None:
     """Validate checkbox lines against angle templates and, for suffixed
     labels, against the shot-sheet roster.
@@ -30,6 +32,7 @@ def validate_checkboxes(
         available_angles: Set of valid angle names from template directory
         filename: MD filename for error messages
         roster: Set of valid subject ids from the shot sheet (None = no sheet)
+        templates: Angle templates by name; enables subject_arity checking
 
     Raises:
         SystemExit: If validation fails
@@ -59,6 +62,14 @@ def validate_checkboxes(
             if unknown:
                 invalid_labels.append(label)
                 logger.error(f"{filename}: unknown subject ids in label: {unknown} — '{label}'")
+                continue
+            template = (templates or {}).get(angle_part.replace(" ", "_"))
+            if template is not None and len(subject_ids) != template.subject_arity:
+                invalid_labels.append(label)
+                logger.error(
+                    f"{filename}: '{template.label}' needs {template.subject_arity} subject(s), "
+                    f"label names {len(subject_ids)} ({', '.join(subject_ids)}) — '{label}'"
+                )
                 continue
         else:
             angle_part = label

@@ -1,11 +1,8 @@
 """User message template renderer for multi-angle reframing."""
 
 from pathlib import Path
-from typing import List
 from loguru import logger
 
-PLACEHOLDER_DATASET_B = "[Dataset B — Original image]"
-PLACEHOLDER_DATASET_C = "[Dataset C — Character sheet reference URLs]"
 PLACEHOLDER_DATASET_D = "[Dataset D — Angle template text]"
 
 
@@ -31,31 +28,18 @@ def load_user_message_template(template_path: Path) -> str:
     return content
 
 
-def render_user_message(
-    template: str,
-    dataset_b: str,
-    dataset_c: List[str],
-    dataset_d: str,
-) -> str:
-    """Render user message by replacing placeholders with actual data.
+def render_user_message(template: str, dataset_d: str) -> str:
+    """Render the user message by substituting the angle template text.
+
+    Images are never rendered here. They travel as real `image_url` content
+    parts built by `payload_builder.build_user_content`; interpolating a URL
+    into this text was the original blind-model defect and must not return.
 
     Args:
         template: User message template string
-        dataset_b: Original image URL
-        dataset_c: Character sheet reference URLs
         dataset_d: Angle template text
 
     Returns:
         Rendered user message string
     """
-    result = template.replace(PLACEHOLDER_DATASET_B, dataset_b)
-
-    if dataset_c:
-        ref_images = "\n\n".join(f"![image]({url})" for url in dataset_c)
-        result = result.replace(PLACEHOLDER_DATASET_C, ref_images)
-    else:
-        result = result.replace(PLACEHOLDER_DATASET_C, "No character sheet references provided.")
-
-    result = result.replace(PLACEHOLDER_DATASET_D, dataset_d)
-
-    return result
+    return template.replace(PLACEHOLDER_DATASET_D, dataset_d)

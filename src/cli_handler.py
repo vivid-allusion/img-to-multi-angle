@@ -170,10 +170,15 @@ class ProcessCommand:
             })
 
         from .checkbox_validator import validate_checkboxes
+        from .angle_loader import load_angle_template_objects
+        templates = load_angle_template_objects(angle_dir)
         available_angles = set(angles.keys())
         for item in md_items:
             roster = {s.id for s in item["parsed"].shot_sheet.subjects} if item["parsed"].shot_sheet else None
-            validate_checkboxes(item["checkbox_lines"], available_angles, item["filename"], roster=roster)
+            validate_checkboxes(
+                item["checkbox_lines"], available_angles, item["filename"],
+                roster=roster, templates=templates,
+            )
 
         logger.info(f"Loaded {len(md_items)} MD files, {len(angles)} angles")
 

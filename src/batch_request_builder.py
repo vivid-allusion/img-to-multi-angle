@@ -54,9 +54,7 @@ class BatchRequestBuilder:
                         continue
 
                     angle_text = angles[angle_name]
-                    user_msg = render_user_message(
-                        um_template, item["dataset_b"], item["dataset_c"], angle_text
-                    )
+                    user_msg = render_user_message(um_template, angle_text)
                     user_content = build_user_content(
                         scene=item["dataset_a"],
                         original_image=item["dataset_b"],

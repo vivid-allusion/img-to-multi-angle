@@ -117,7 +117,7 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         total_usage: Dict[str, Any] = {}
         for angle_name, subject_ids in parsed.checked_angle_bindings:
             angle_text = substitute_subject(self.angles[angle_name], subject_ids, parsed.shot_sheet)
-            user_msg = render_user_message(self.um_template, parsed.original_image, parsed.ref_images, angle_text)
+            user_msg = render_user_message(self.um_template, angle_text)
 
             try:
                 user_content = build_user_content(

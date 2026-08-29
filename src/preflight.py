@@ -9,7 +9,7 @@ from openrouter import OpenRouter
 from loguru import logger
 
 from .md_input_parser import parse_md_file
-from .angle_loader import load_angle_templates
+from .angle_loader import load_angle_template_objects
 from .checkbox_validator import validate_checkboxes
 
 ANGLE_TEMPLATE_DIR = Path("USER-FILES/01.CONFIG/angle-templates")
@@ -41,14 +41,18 @@ def run_preflight(
     plan_mode: checkbox validation is skipped (Q19 — --plan accepts files
     without a checkbox section); URL/vision/config checks still run.
     """
-    available_angles = set(load_angle_templates(ANGLE_TEMPLATE_DIR).keys())
+    templates = load_angle_template_objects(ANGLE_TEMPLATE_DIR)
+    available_angles = set(templates.keys())
 
     parsed_files = []
     for md_path in md_files:
         parsed = parse_md_file(md_path)
         if not plan_mode:
             roster = {s.id for s in parsed.shot_sheet.subjects} if parsed.shot_sheet else None
-            validate_checkboxes(parsed.all_checkbox_lines, available_angles, md_path.name, roster=roster)
+            validate_checkboxes(
+                parsed.all_checkbox_lines, available_angles, md_path.name,
+                roster=roster, templates=templates,
+            )
         parsed_files.append((md_path.name, parsed))
 
     url_cache: Dict[str, bool] = {}

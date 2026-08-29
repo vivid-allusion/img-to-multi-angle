@@ -4,11 +4,16 @@ Classification inputs are the template frontmatter (shot_size, azimuth_delta,
 height_delta, min_source_size, transform) compared against the shot sheet.
 Risk order: subtractive < lateral < novel_view.
 
-- subtractive → Coverage, pre-ticked
-- lateral     → Coverage, pre-ticked only if the bound subject(s) are
-                unoccluded (Q13); scene-wide templates always pre-tick
+- subtractive → Coverage; pre-ticked unless a bound subject is unusable
+- lateral     → Coverage; same visibility gate
 - novel_view  → Stretch heading, never pre-ticked; ~180° reverse shots are
                 only offered when the opposing subject's face is visible
+
+A bound subject is "unusable" when the shot sheet marks it occluded, or when
+the shot is tight enough to need a face (MCU/CU/ECU) and the sheet marks the
+face not visible. Cropping into a hidden or faceless figure is the additive
+case the whole classifier exists to avoid, so it is offered but not pre-ticked.
+Scene-wide templates carry no subjects and always pre-tick.
 """
 
 from dataclasses import dataclass
@@ -19,6 +24,8 @@ from .shot_sheet import ShotSheet
 
 SHOT_SIZE_ORDER = {"EWS": 1, "WS": 2, "MWS": 3, "MS": 4, "MCU": 5, "CU": 6, "ECU": 7}
 RISK_ORDER = {"subtractive": 0, "lateral": 1, "novel_view": 2}
+
+FACE_REQUIRED_SIZES = {"MCU", "CU", "ECU"}
 
 HEADING_COVERAGE = "### Coverage (recommended)"
 HEADING_STRETCH = "### Stretch (unlikely to match source)"
@@ -108,6 +115,27 @@ def _pair_label(template: AngleTemplate, ids: List[str], sheet: ShotSheet) -> st
     return f"{template.label} — {ids[0]} {connector} {ids[1]}"
 
 
+def _pretick_ok(template: AngleTemplate, ids: List[str], sheet: ShotSheet) -> bool:
+    """Pre-tick only when every bound subject is actually usable in the source.
+
+    Occluded subjects fail outright; tight shots (MCU/CU/ECU) additionally
+    require a visible face. Scene-wide templates have no subjects to check.
+    """
+    if not template.subject_bound:
+        return True
+
+    needs_face = template.shot_size in FACE_REQUIRED_SIZES
+
+    for sid in ids:
+        subject = _subject_by_id(sheet, sid)
+        if subject is None or subject.occluded:
+            return False
+        if needs_face and not subject.face_visible:
+            return False
+
+    return True
+
+
 def _entry(template: AngleTemplate, ids: List[str], sheet: ShotSheet, risk: str) -> Optional[ShotEntry]:
     """Build the entry for one subject group, or None if not offered at all."""
     if risk == "novel_view":
@@ -124,17 +152,10 @@ def _entry(template: AngleTemplate, ids: List[str], sheet: ShotSheet, risk: str)
             heading=HEADING_STRETCH,
         )
 
-    ticked = True
-    if risk == "lateral" and template.subject_bound:
-        for sid in ids:
-            subject = _subject_by_id(sheet, sid)
-            if subject is None or subject.occluded:
-                ticked = False
-
     return ShotEntry(
         label=_pair_label(template, ids, sheet),
         subject_ids=ids,
-        ticked=ticked,
+        ticked=_pretick_ok(template, ids, sheet),
         heading=HEADING_COVERAGE,
     )
 
