@@ -26,7 +26,10 @@ PLAN_SYSTEM_PROMPT = (
     "shot sheet describing exactly what is visible: the scene type, the frame size, the "
     "camera height, every human subject (id, description, position, facing, face visible, "
     "occlusion), notable props, lighting, and occlusion notes. Invent nothing that is not "
-    "in the image."
+    "in the image. Reference images labelled as assets may also be provided. Bind a "
+    "subject's 'asset' field to the asset id that best depicts that subject, and only when "
+    "you are confident it is the same person or object; otherwise leave it null. A wrong "
+    "binding is worse than none."
 )
 
 PLAN_INSTRUCTION = (
@@ -55,6 +58,7 @@ SHOT_SHEET_SCHEMA = {
                     "facing": {"type": "string"},
                     "face_visible": {"type": "boolean"},
                     "occluded": {"type": "boolean"},
+                    "asset": {"type": ["string", "null"], "pattern": "^A[0-9]+$"},
                 },
                 "required": ["id", "description", "position", "facing", "face_visible", "occluded"],
                 "additionalProperties": False,
@@ -90,11 +94,20 @@ RESPONSE_FORMAT = {
 def plan_file(
     parsed: ParsedMdInput, filename: str, client: OpenRouter, config: Dict[str, Any]
 ) -> ShotSheet:
-    """One vision call → ShotSheet. Plan calls are exempt from the token floor (Q4)."""
+    """One vision call → ShotSheet. Plan calls are exempt from the token floor (Q4).
+
+    With declared assets the plan call receives every asset as a labelled
+    image part (phase_1 §1.2); legacy files pass bare ref URLs as before.
+    """
+    if parsed.assets is not None:
+        ref_images = parsed.assets
+    else:
+        ref_images = parsed.ref_images
+
     user_content = build_user_content(
         scene=parsed.scene,
         original_image=parsed.original_image,
-        ref_images=parsed.ref_images,
+        ref_images=ref_images,
         angle_text=PLAN_INSTRUCTION,
     )
 
@@ -116,9 +129,19 @@ def plan_file(
         raise RuntimeError(f"{filename}: plan call returned a non-object JSON value")
 
     try:
-        return shot_sheet_from_dict(data)
+        sheet = shot_sheet_from_dict(data)
     except (KeyError, TypeError, ValueError) as e:
         raise RuntimeError(f"{filename}: plan call returned an invalid shot sheet: {e}") from e
+
+    declared_ids = {a.id for a in parsed.assets} if parsed.assets is not None else set()
+    for subject in sheet.subjects:
+        if subject.asset and subject.asset not in declared_ids:
+            raise RuntimeError(
+                f"{filename}: subject {subject.id} bound to undeclared asset "
+                f"'{subject.asset}' — aborting plan (declared: {sorted(declared_ids)})"
+            )
+
+    return sheet
 
 
 def run_plan_mode(

@@ -8,7 +8,7 @@ import httpx
 from openrouter import OpenRouter
 from loguru import logger
 
-from .md_input_parser import parse_md_file
+from .md_input_parser import parse_md_file, _parse_checkbox_line, ParsedMdInput
 from .angle_loader import load_angle_template_objects
 from .checkbox_validator import validate_checkboxes
 
@@ -30,6 +30,69 @@ class PreflightReport:
     vision_capable: bool
 
 
+def _check_groundings(filename: str, parsed: ParsedMdInput, plan_mode: bool) -> None:
+    """Phase-1 traceability checks for files that declare assets (§1.3 + Q1/Q2).
+
+    Q1: once an assets block exists, every ref image must be declared.
+    Q2: every checkbox entry must carry a grounding list; every id in braces
+        must exist in the assets block. Braces-divergence warnings (Q3/Q4)
+        apply to checked shots with a shot sheet.
+    """
+    if parsed.assets is None:
+        return
+
+    declared_ids = {a.id for a in parsed.assets}
+    declared_urls = {a.url for a in parsed.assets}
+
+    for url in parsed.ref_images:
+        if url not in declared_urls:
+            raise PreflightError(
+                f"{filename}: ref image not declared in the assets block: {url} — "
+                "declare every reference image once an assets block exists"
+            )
+
+    if plan_mode:
+        return
+
+    for line in parsed.all_checkbox_lines:
+        _, _, ground_ids, _ = _parse_checkbox_line(line)
+        if ground_ids is None:
+            raise PreflightError(
+                f"{filename}: checkbox entry has no grounding list — append braces "
+                f"(use {{}} for master-only): '{line.strip()}'"
+            )
+        unknown = [g for g in ground_ids if g not in declared_ids]
+        if unknown:
+            raise PreflightError(
+                f"{filename}: label '{line.strip()}' grounds on unknown asset id(s) "
+                f"{unknown} — declared: {sorted(declared_ids)}"
+            )
+
+    if parsed.shot_sheet is None:
+        return
+
+    assets_by_subject = {s.id: s.asset for s in parsed.shot_sheet.subjects}
+    for angle_name, subject_ids, ground_ids in parsed.checked_angle_bindings:
+        bound = {
+            assets_by_subject[sid]
+            for sid in subject_ids
+            if assets_by_subject.get(sid)
+        }
+        braces = set(ground_ids or [])
+        if bound - braces:
+            logger.warning(
+                f"{filename}: '{angle_name}' — bound subject asset(s) "
+                f"{sorted(bound - braces)} not in grounds; master-only grounding "
+                "accepted as a deliberate override"
+            )
+        if braces - bound:
+            logger.warning(
+                f"{filename}: '{angle_name}' — grounds {sorted(braces - bound)} "
+                "not bound to any subject in the shot sheet; braces remain "
+                "authoritative"
+            )
+
+
 def run_preflight(
     config: Dict[str, Any],
     md_files: List[Path],
@@ -39,7 +102,9 @@ def run_preflight(
     """Run all preflight checks in order. Raises on the first failure.
 
     plan_mode: checkbox validation is skipped (Q19 — --plan accepts files
-    without a checkbox section); URL/vision/config checks still run.
+    without a checkbox section); URL/vision/config checks still run. The
+    Q2/brace grammar checks are rewrite-mode only; the Q1 declaration check
+    and asset URL checks run in both modes.
     """
     templates = load_angle_template_objects(ANGLE_TEMPLATE_DIR)
     available_angles = set(templates.keys())
@@ -53,11 +118,13 @@ def run_preflight(
                 parsed.all_checkbox_lines, available_angles, md_path.name,
                 roster=roster, templates=templates,
             )
+        _check_groundings(md_path.name, parsed, plan_mode)
         parsed_files.append((md_path.name, parsed))
 
     url_cache: Dict[str, bool] = {}
     for filename, parsed in parsed_files:
-        for url in [parsed.original_image, *parsed.ref_images]:
+        asset_urls = [a.url for a in parsed.assets] if parsed.assets is not None else []
+        for url in [parsed.original_image, *asset_urls, *parsed.ref_images]:
             _check_image_url(url, filename, url_cache)
 
     _check_model_vision(config, client)

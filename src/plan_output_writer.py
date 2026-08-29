@@ -29,6 +29,7 @@ def _render_shot_sheet_block(sheet: ShotSheet) -> str:
                 "facing": s.facing,
                 "face_visible": s.face_visible,
                 "occluded": s.occluded,
+                "asset": s.asset,
             }
             for s in sheet.subjects
         ],
@@ -38,6 +39,19 @@ def _render_shot_sheet_block(sheet: ShotSheet) -> str:
     }
     body = yaml.safe_dump(data, sort_keys=False, allow_unicode=True).rstrip("\n")
     return f"{SHOT_SHEET_FENCE}\n{body}\n```"
+
+
+def _grounds_for(entry: ShotEntry, sheet: ShotSheet) -> str:
+    """Braces for one entry, derived from its subjects' asset bindings (§1.3).
+
+    The master is implicit and never listed; no bindings → "{}".
+    """
+    ground_ids = []
+    for sid in entry.subject_ids:
+        subject = next((s for s in sheet.subjects if s.id == sid), None)
+        if subject and subject.asset and subject.asset not in ground_ids:
+            ground_ids.append(subject.asset)
+    return "{" + ", ".join(ground_ids) + "}"
 
 
 def _new_section_lines(sheet: ShotSheet, entries: List[ShotEntry]) -> List[str]:
@@ -55,7 +69,7 @@ def _new_section_lines(sheet: ShotSheet, entries: List[ShotEntry]) -> List[str]:
         lines.append(heading)
         for entry in heading_entries:
             mark = "x" if entry.ticked else " "
-            lines.append(f"- [{mark}] {entry.label}")
+            lines.append(f"- [{mark}] {entry.label} {_grounds_for(entry, sheet)}")
         lines.append("")
 
     while lines and lines[-1] == "":

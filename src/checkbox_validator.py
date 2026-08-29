@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from loguru import logger
 
 from .angle_loader import AngleTemplate, get_available_angle_names
+from .md_input_parser import GROUNDS_PATTERN
 
 SUBJECT_ID_PATTERN = re.compile(r"\bS\d+\b")
 
@@ -46,6 +47,7 @@ def validate_checkboxes(
     for line in checkbox_lines:
         stripped = line.strip()
         label = stripped[5:].strip()
+        label = GROUNDS_PATTERN.sub("", label).rstrip()
 
         if " — " in label:
             angle_part, subject_part = label.split(" — ", 1)

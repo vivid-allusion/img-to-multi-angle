@@ -5,6 +5,7 @@ by the rewrite pipeline (md_input_parser → orchestrator) and the feasibility
 classifier (shot_feasibility). Schema per plan §3.3 + Q13 (`occluded`).
 """
 
+import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -17,7 +18,11 @@ SHOT_SHEET_FENCE = "```yaml shot-sheet"
 
 @dataclass
 class ShotSubject:
-    """One subject in a shot sheet roster."""
+    """One subject in a shot sheet roster.
+
+    `asset` is the planner's binding to a declared asset (phase_1 §1.2), or
+    None when no asset clearly depicts the subject.
+    """
 
     id: str
     description: str
@@ -25,6 +30,7 @@ class ShotSubject:
     facing: str
     face_visible: bool
     occluded: bool
+    asset: Optional[str] = None
 
 
 @dataclass
@@ -91,17 +97,22 @@ def extract_shot_sheet(content: str, filename: str) -> Tuple[Optional[ShotSheet]
 
 def shot_sheet_from_dict(data: dict) -> ShotSheet:
     """Build a ShotSheet from a parsed YAML mapping (schema per §3.3 + Q13)."""
-    subjects = [
-        ShotSubject(
-            id=str(s["id"]),
-            description=str(s["description"]),
-            position=str(s["position"]),
-            facing=str(s["facing"]),
-            face_visible=bool(s["face_visible"]),
-            occluded=bool(s.get("occluded", False)),
+    subjects = []
+    for s in data["subjects"]:
+        asset = s.get("asset")
+        if asset is not None and not re.match(r"^A\d+$", str(asset)):
+            raise ValueError(f"subject {s['id']}: asset '{asset}' must match ^A\\d+$")
+        subjects.append(
+            ShotSubject(
+                id=str(s["id"]),
+                description=str(s["description"]),
+                position=str(s["position"]),
+                facing=str(s["facing"]),
+                face_visible=bool(s["face_visible"]),
+                occluded=bool(s.get("occluded", False)),
+                asset=str(asset) if asset is not None else None,
+            )
         )
-        for s in data["subjects"]
-    ]
     props = [
         ShotProp(id=str(p["id"]), description=str(p["description"]), position=str(p["position"]))
         for p in data.get("props", [])

@@ -1,3 +1,97 @@
+## Last Session Summary (2026-08-29) — Phase 1: Typed assets and per-shot reference routing
+
+### Feature Implementation — ✅ COMPLETE (verified live)
+
+Phase 1 of the 3-phase plan (`plan/phase_1.md`, plan_context: "finishing the reframer before
+the fork") landed on `img-to-reframes` (committed at phase wrap-up). Goal met: each
+shot now ships with exactly the references that ground it. Q1–Q6 answered (all option 1) in
+`USER-FILES/07.TEMP/questions.md`.
+
+### New Module (1)
+- `assets.py` (98) — `Asset` dataclass (id `^A\d+$`, role ∈ character|prop|location, note, url);
+  `extract_assets_block()` fence parser (absent → None; empty → []; malformed/bad id/bad role/
+  missing url/duplicate id → ValueError at parse time). Split out of `md_input_parser` per the
+  quantity memo (kept it at 235 ≤ 250)
+
+### Modules Modified (8)
+- `md_input_parser.py` (235) — parses the optional ```yaml assets block into `ParsedMdInput`
+  (`assets: Optional[List[Asset]]`, None = no block); the fence is excluded from scene-text
+  collection and image scanning (its `- id: A1` lines would otherwise pollute the scene);
+  INFO log "no assets block — every shot receives all N references"; `_parse_checkbox_line`
+  returns a 4th element: ground ids from a trailing `{A1, A2}` suffix (`{}` → [], absent → None);
+  `checked_angle_bindings` is now (angle, subject_ids, ground_ids) triples
+- `shot_sheet.py` — `ShotSubject.asset: Optional[str]`; `shot_sheet_from_dict` validates the
+  `^A\d+$` pattern; `plan_output_writer` renders it back into the shot-sheet block
+- `payload_builder.py` — `ref_images` now accepts `str | Asset`; marker lines say
+  `Image N is asset A1 (role: character) — "note".` for assets, legacy basename wording for
+  bare URLs (legacy payloads stay byte-identical — regression proof below); image-count
+  invariant unchanged (compares against the handed list)
+- `shot_planner.py` — plan calls send declared assets as labelled image parts; json_schema
+  subject `asset` is nullable `^A\d+$`; PLAN_SYSTEM_PROMPT instructs bind-only-when-confident
+  ("a wrong binding is worse than none"); after the call, any subject bound to an undeclared
+  asset id aborts the plan run (`_FAILED` + exit 1) — Q6
+- `plan_output_writer.py` — every checkbox label gains derived braces
+  (`- [x] Close Up — S1 (woman) {A1}`, `{}` when no bindings); master never listed
+- `preflight.py` (200) — `_check_groundings()`: Q1 undeclared ref → hard fail (both modes);
+  Q2 braces-less label / unknown brace id / empty-assets-with-braces → hard fail naming file +
+  label + id (rewrite mode); Q3/Q4 cross-check braces vs shot-sheet bindings → WARN only
+  (braces authoritative); Q5 every declared asset URL HEAD-checked (unused included), dead URL
+  aborts. All before any API call and before any directory exists
+- `multi_angle_output_saver.py` — `save_angle_outputs()` takes per-shot `grounds_by_angle`;
+  emits master + only that shot's grounds; a result with no grounding entry raises KeyError
+  (no silent ref loss); legacy byte format preserved (prompt + blank + embeds)
+- `multi_angle_orchestrator.py` (268, +16 — was already 252 over the soft limit, pre-existing
+  justification holds) — resolves each checked label's braces → asset URLs; passes per-shot
+  refs (Asset objects) to `build_user_content` and per-shot grounds to the saver; legacy path
+  (no block) passes all refs exactly as before
+- `checkbox_validator.py` — strips the trailing `{...}` before template-name matching (the
+  Phase 1 grammar made `- [x] Wide Shot {}` spuriously invalid)
+
+### Questions resolved this session
+Q1–Q6 in `USER-FILES/07.TEMP/questions.md` (all recommended options): Q1 hard fail on
+undeclared refs once an assets block exists; Q2 grounding list mandatory in asset files;
+Q3 WARN-only on omitted bound assets; Q4 braces authoritative + WARN on divergence; Q5
+HEAD-check all asset URLs including unused; Q6 abort `--plan` on undeclared bindings.
+
+### Verification (§1.5) — ALL PASSED (live where it matters)
+- Baseline captured pre-change (`260829_181036_...`, sha256 in /tmp/opencode/p1_baseline_sha256.txt)
+- **Regression (P1-15)**: live legacy rerun → 17/17 embed-identical, same file set. Prompt
+  texts differ run-to-run because the profile runs at temperature 0.2 — byte-identity across
+  live runs is not achievable at temp ≠ 0. Deterministic proof instead: c35a72f parser vs new
+  parser → identical output on the legacy file; **all 17 payloads byte-identical** old vs new
+  code (harness in /tmp/opencode/oldpkg/)
+- **Routing (P1-16)**: live, two character assets (GitHub avatars u/1 u/2 — Wikimedia 403s
+  httpx HEAD, avatars return 200 image/*) — CU S1 → master+A1 only; CU S2 → master+A2 only;
+  Wide Shot → master only; prompts 78–90 words, preservation clause present
+- **Failure battery (P1-17)**: undeclared brace id → PreflightError exit 1; duplicate asset id
+  → ValueError exit 1; zero output directories
+- **--plan (P1-18)**: live on asset file → shot-sheet block carries `asset` fields, every
+  label carries braces; model returned all-null bindings (random avatars vs dock scene — the
+  confident-only rule doing its job; non-null brace derivation unit-verified offline);
+  `04.INPUT/` sha256-identical before/after
+- **Gates (P1-19)**: `--selftest` PASS live; 404 URL / text/html / text-only model (vision
+  gate) / payload-integrity invariant all abort, zero output directories
+- `--cost-only` ($0.0282) and `--dry-run` unchanged; compileall clean; 0 print(), no new
+  TODO/FIXME; all touched files ≤ 268 lines
+
+### Test assets note
+Live tests used `--input-dir /tmp/opencode/...` — `04.INPUT/` untouched. Asset URLs for
+testing: `https://avatars.githubusercontent.com/u/1?v=4` / `u/2?v=4` (200 image/* on HEAD,
+unlike picsum 206 / Wikimedia 403).
+
+### Still open (unchanged)
+- `retry_config`/`stream`/`processing_options.*` validated but never read; no client timeout
+- `summary_report.md` references a COST.md nothing writes; "Profile: Unknown"
+- `stats["failed"]`/`stats["errors"]` dead paths; preflight failures surface as raw tracebacks
+- `multi_angle_orchestrator.py` 268 lines (+16 this phase — justified, pre-existing overage)
+
+### Next Phase
+- Phase 2 — retire the fixed angle templates (`plan/phase_2.md`); deletes angle_loader,
+  shot_feasibility, subject_binding, checkbox template matching. Entry gate met (Phase 1
+  verified live).
+
+---
+
 ## Last Session Summary (2026-08-29) — Post-plan review fixes
 
 ### Four defects found in review of the completed 4-phase plan — ✅ ALL FIXED

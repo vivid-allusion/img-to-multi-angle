@@ -113,17 +113,30 @@ class MultiAngleOrchestrator(BaseOrchestrator):
 
         system_prompt = build_system_prompt(self.config)
 
+        if parsed.assets is not None:
+            assets_by_id = {a.id: a for a in parsed.assets}
+        else:
+            assets_by_id = {}
+
         angle_results = {}
+        grounds_by_angle: Dict[str, List[str]] = {}
         total_usage: Dict[str, Any] = {}
-        for angle_name, subject_ids in parsed.checked_angle_bindings:
+        for angle_name, subject_ids, ground_ids in parsed.checked_angle_bindings:
             angle_text = substitute_subject(self.angles[angle_name], subject_ids, parsed.shot_sheet)
             user_msg = render_user_message(self.um_template, angle_text)
+
+            if parsed.assets is None:
+                shot_refs = parsed.ref_images
+                ground_urls = list(parsed.ref_images)
+            else:
+                shot_refs = [assets_by_id[gid] for gid in (ground_ids or [])]
+                ground_urls = [a.url for a in shot_refs]
 
             try:
                 user_content = build_user_content(
                     scene=parsed.scene,
                     original_image=parsed.original_image,
-                    ref_images=parsed.ref_images,
+                    ref_images=shot_refs,
                     angle_text=user_msg,
                     shot_sheet=parsed.shot_sheet_text,
                     cache_breakpoint=use_cache,
@@ -139,6 +152,7 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                 angle_name if not subject_ids else f"{angle_name}_{'_'.join(subject_ids)}"
             )
             angle_results[result_key] = response_text
+            grounds_by_angle[result_key] = ground_urls
 
             if usage_data:
                 for key in (
@@ -150,7 +164,9 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                 ):
                     total_usage[key] = total_usage.get(key, 0) + usage_data.get(key, 0)
 
-        saved_files = save_angle_outputs(output_dir, input_name, angle_results, parsed.original_image, parsed.ref_images)
+        saved_files = save_angle_outputs(
+            output_dir, input_name, angle_results, parsed.original_image, grounds_by_angle
+        )
 
         usage = UsageData(
             input_tokens=total_usage.get("input_tokens", 0),
