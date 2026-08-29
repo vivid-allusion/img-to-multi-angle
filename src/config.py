@@ -10,23 +10,6 @@ from .profile_manager import load_profile, apply_profile_to_config
 from .config_validator import ConfigurationValidator
 
 
-def require_batch_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Ensure batch_config is present in configuration.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        The batch_config dictionary
-
-    Raises:
-        ValueError: If batch_config is missing
-    """
-    if "batch_config" not in config:
-        raise ValueError("Missing 'batch_config' in configuration")
-    return config["batch_config"]
-
-
 def _load_base_config(validator: ConfigurationValidator, base_path: Path) -> Dict[str, Any]:
     """Load and validate the base API configuration."""
     api_config_path = base_path / "01.CONFIG" / "openrouter_config.yaml"
@@ -195,9 +178,7 @@ def get_output_directory(config: Optional[Dict[str, Any]] = None, suffix: str = 
             display_name = get_model_display_name(model_name, config)
             dir_parts.append(display_name)
 
-        batch_mode = config["batch_mode"]
-        mode_str = "BATCH" if batch_mode else "RT"
-        dir_parts.append(mode_str)
+        dir_parts.append("RT")
 
         temp_value = None
         if "temperature" in config:

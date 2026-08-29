@@ -11,40 +11,6 @@ retry_config:
   timeout: 600
 
 # -----------------------------------------------------------------------------
-# BATCH PROCESSING CONFIGURATION
-# -----------------------------------------------------------------------------
-batch_config:
-  batch_name: "txt_processing_batch"
-  description: "TXT file processing"
-
-  max_requests_per_batch: 10000
-  auto_split_large_batches: true
-
-  batch_output_format: "jsonl"
-  save_batch_request_file: true
-  batch_request_dir: "USER-FILES/05.OUTPUT/batch_requests"
-
-  check_interval_minutes: 5
-  max_wait_hours: 24
-  auto_download_results: true
-  results_dir: "USER-FILES/05.OUTPUT/batch_results"
-
-  auto_retry_failed: true
-  max_retry_attempts: 2
-  partial_results_on_timeout: true
-
-  estimate_cost_before_submit: true
-  cost_threshold_usd: 100
-
-  track_custom_ids: true
-  custom_id_format: "txt_{filename}"
-  
-  priority: "normal"
-  metadata:
-    project: "txt_processing"
-    profile_version: "4.0.0"
-
-# -----------------------------------------------------------------------------
 # PROCESSING OPTIONS
 # -----------------------------------------------------------------------------
 processing_options:

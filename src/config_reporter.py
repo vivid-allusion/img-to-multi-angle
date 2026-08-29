@@ -167,8 +167,4 @@ class ConfigReporter:
   retry_config:
     max_retries: 2
     timeout: 600.0
-  batch_config:
-    max_requests_per_batch: 10000
-    batch_request_dir: USER-FILES/05.OUTPUT/batch_requests
-    save_batch_request_file: true
   avg_output_tokens: 800"""

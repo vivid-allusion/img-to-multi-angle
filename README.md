@@ -62,46 +62,57 @@ Place `.md` files in `USER-FILES/04.INPUT/`. Each file must have:
 Example (`prompt01.md`):
 
 ```md
-Anchorage bar. Close on a Tlingit bartender and a Hasidic Jew sitting across one another inside a dimly lit, early 20th-century tavern. On the left, the large-framed bartender with long dark hair and a thick beard leans over the wooden counter. To the right, the Hasidic man, featuring a graying beard, payot, a black wide-brimmed hat, and a weathered dark coat, reaches toward a shot glass on the bar. The provided image called allen.png shows you what the Hasidic Jew looks like. The provided image edensaw.jpeg shows what the Tlingit bartender looks like.
+Interior of a sedan at dusk. A man in a dark coat drives, hands on the steering wheel. A woman in a red scarf sits in the passenger seat. The dashboard radio glows between the two front seats.
 
-![image](https://example.com/bar-scene.jpeg)
-- [ ] Birds Eye View
-- [x] Close Up
-- [ ] Crane Jib Shot
-- [ ] Dutch Angle
-- [ ] Establishing Shot
-- [ ] Extreme Close Up
-- [ ] Handheld Shaky Cam
-- [ ] High Angle
-- [ ] Low Angle
-- [ ] Macro Shot
-- [ ] Over The Shoulder
-- [ ] Point Of View Pov
-- [ ] Rack Focus
-- [ ] Static Shot
-- [ ] Tracking Dolly Shot
-- [ ] Two Shot
-- [ ] Wide Shot
-![image](https://example.com/allen.png)
-![image](https://example.com/edensaw.jpeg)
+![master](https://example.com/car-interior.jpeg)
+
+```yaml shot-sheet
+scene_type: vehicle_interior
+shot_size: MS
+camera_height: eye
+subject_count: 2
+subjects:
+- id: S1
+  description: the man in the dark coat driving
+  position: driver's seat, frame left
+  facing: forward
+  face_visible: true
+  occluded: false
+props: []
+lighting: warm dusk light
+notes: ''
 ```
 
-### Angle Selection via Checkboxes
+```yaml shot-plan
+- id: SH01
+  label: CU on the woman
+  intent: Punch in on the woman in the red scarf, chest up, eye level.
+  subject_ids: [S2]
+  grounds: []
+  recommended: true
+  reason: her face is unoccluded and clearly visible in the master
+```
 
-The script reads available angles dynamically from `USER-FILES/01.CONFIG/angle-templates/`. Each `.txt` file in that directory becomes one checkbox line in the input file.
+### Recommended
+- [x] SH01 — CU on the woman {}
 
-**Checkbox format:**
-- `- [ ] Angle Name` — unchecked (this angle will NOT be processed)
-- `- [x] Angle Name` or `- [X] Angle Name` — checked (this angle WILL be processed)
-- The angle name must exactly match a `.txt` filename (underscores replaced with spaces)
+![image](https://example.com/woman-ref.png)
+```
+
+### Shot Selection via `--plan`
+
+There is no fixed angle list. `--plan` sends the scene image to the model, which proposes a shot sheet and a shot list — including prop and detail inserts (radio, hands, eyes) that a generic angle vocabulary could never express. The enriched MD lands in a timestamped `SHOT-PLAN` output directory; **`04.INPUT/` is never modified**.
+
+**Review gate:** copy the enriched MD into `04.INPUT/` and edit it:
+- tick (`- [x]`) the shots to run; untick the rest
+- shots the model cannot ground are listed unticked under `### Possible` with a stated reason — you may still tick them deliberately
+- the braces (`{A1}`) select which declared assets ground the shot; `{}` = master only
 
 **Validation rules:**
-- Every input file MUST have a checkbox section. Missing checkboxes cause a hard fail.
-- All checkbox labels must match existing `.txt` files in `angle-templates/`. Invalid labels cause a hard fail.
+- Every ticked shot id must exist in that file's `shot-plan` block. Unknown ids hard-fail.
+- Files without a shot-plan block hard-fail — run `--plan` on them first.
 - If all checkboxes are unchecked, the file is skipped — the raw `.md` is copied to the output directory as-is.
-- Only checked angles generate API calls and output files.
-
-**To add or refresh checkboxes:** Run your MD files through the `add-multi-checkboxes` tool, which reads the current `angle-templates/` directory and inserts the correct checkbox block into each file.
+- Only ticked shots generate API calls and output files.
 
 ## CLI Commands
 
@@ -115,23 +126,17 @@ python -m src.main --profile kimi-k2-thinking_temp0.5_REAL-TIME.yaml
 # Use a custom input directory
 python -m src.main --profile <name> --input-dir /path/to/mds
 
-# Dry run — estimate costs without making API calls
+# Dry run — set up config and output dir without API calls
 python -m src.main --profile <name> --dry-run
 
 # Cost estimate only (uses token counting API, no generation)
 python -m src.main --profile <name> --cost-only
 
-# Submit as a batch request (requires batch_mode: true in profile)
-python -m src.main --profile <name>
+# Generate shot sheet + shot list (one vision call per file)
+python -m src.main --profile <name> --plan
 
-# Check batch status
-python -m src.main --batch-id <batch_id>
-
-# Wait for batch completion and fetch results
-python -m src.main --batch-id <batch_id> --wait
-
-# List recent batches
-python -m src.main --list-batches
+# Selftest — verify the model receives images and sees left/right correctly
+python -m src.main --selftest
 ```
 
 ## Configuration
@@ -141,13 +146,12 @@ python -m src.main --list-batches
 ```
 USER-FILES/
 ├── 01.CONFIG/
-│   ├── openrouter_config.yaml    # Base settings (batch, cache, processing)
+│   ├── openrouter_config.yaml    # Base settings (cache, processing)
 │   ├── system_prompt.md          # System prompt with few-shot examples
-│   ├── user_message.md           # User message template with placeholders
-│   └── angle-templates/          # 17 .txt files, one per camera angle
+│   └── user_message.md           # User message template with placeholders
 ├── 03.PROFILES/
 │   └── *.yaml                    # Model profiles
-├── 04.INPUT/                     # Input .md files go here
+├── 04.INPUT/                     # Input .md files go here (READ ONLY)
 ├── 05.OUTPUT/                    # Timestamped output directories
 ├── 06.DONE/                      # Processed files moved here
 └── 07.TEMP/                      # Temporary files
@@ -162,14 +166,6 @@ retry_config:
   max_retries: 2
   timeout: 600
 
-batch_config:
-  max_requests_per_batch: 10000
-  check_interval_minutes: 5
-  max_wait_hours: 24
-  auto_download_results: true
-  estimate_cost_before_submit: true
-  cost_threshold_usd: 100
-
 processing_options:
   trim_prompts: true
   normalize_spaces: true
@@ -178,16 +174,14 @@ processing_options:
 
 cache_config:
   enabled: false
-  cache_system_prompt: true
   cache_ttl: 5m
-  report_cache_metrics: true
 
 avg_output_tokens: 800
 ```
 
 ### Profile Files (`USER-FILES/03.PROFILES/*.yaml`)
 
-Profiles define the model, pricing, and parameters. Naming convention: `{nickname}_temp{temperature}_{REAL-TIME|BATCH}.yaml`
+Profiles define the model, pricing, and parameters. Naming convention: `{nickname}_temp{temperature}_REAL-TIME.yaml`
 
 ```yaml
 metadata:
@@ -200,8 +194,6 @@ model:
   endpoint: moonshotai/kimi-k2-thinking
   nickname: kimi-k2-thinking
   capabilities:
-    context_window: 128000
-    supports_batching: true
     supports_caching: false
     supports_thinking: true
 
@@ -209,11 +201,6 @@ pricing:
   real_time:
     input: 0.6
     output: 2.5
-  batch:
-    input: 0.3
-    output: 1.25
-
-batch_mode: false
 
 parameters:
   temperature: 0.5
@@ -228,9 +215,9 @@ enabled: true
 - **No conflicts** — a setting cannot exist in both `openrouter_config.yaml` AND a profile file
 - If only one profile exists, it is auto-detected; otherwise `--profile` is required
 
-## Camera Angles
+## Shot Planning
 
-17 angle templates ship by default in `USER-FILES/01.CONFIG/angle-templates/`. The list is dynamic — add or remove `.txt` files to change available angles. The checkbox section in each input file is built from these filenames (underscores → spaces).
+There is no fixed angle list. `--plan` has the model look at the image and propose the shot list itself: a shot sheet (scene type, frame size, camera height, subject roster, props, lighting) plus a shot list where every shot carries a label, an intent written as concrete prose, and a `recommended` flag with a stated reason. Shots the model cannot ground (occluded subjects, faces not visible) are listed unticked under `### Possible`.
 
 ## Output Format
 
@@ -239,33 +226,13 @@ Output directories are timestamped and never overwritten:
 ```
 USER-FILES/05.OUTPUT/260524_052133_kimi-k2-thinking_RT_temp0.5_MULTI-ANGLE-MD/
 ├── prompt01/
-│   ├── prompt01_Close_Up.md          ← only checked angles
-│   └── ... (only the angles you checked)
-├── prompt02.md                        ← all-unchecked file, copied as-is
-└── processing_log.txt
+│   ├── prompt01_SH01_CU_on_the_woman.md   ← only ticked shots
+│   └── ... (only the shots you ticked)
+├── prompt02.md                            ← all-unchecked file, copied as-is
+└── summary_report.md
 ```
 
-Each output `.md` file contains the AI-generated reframing prompt plus the original image URL and character reference URLs. Files with no checked angles are copied verbatim into the output directory.
-
-## Batch Processing
-
-Set `batch_mode: true` in a profile to use OpenRouter's Batch API:
-
-- **50% cost discount** vs real-time processing
-- Results arrive within 24 hours
-- Submit with the normal `--profile` command
-- Monitor with `--batch-id <id>` or `--wait`
-
-```bash
-# Submit batch
-python -m src.main --profile kimi-k2-thinking_temp0.5_BATCH.yaml
-
-# Check status
-python -m src.main --batch-id batch_abc123
-
-# Wait for completion and auto-download results
-python -m src.main --batch-id batch_abc123 --wait
-```
+Each output `.md` file contains the AI-generated reframing prompt (60–90 words, ending with the preservation clause), a blank line, then the master image embed followed by only the grounding reference embeds for that shot. Files with no ticked shots are copied verbatim into the output directory.
 
 ## Cost Estimation
 
@@ -277,7 +244,7 @@ python -m src.main --profile <name> --dry-run
 python -m src.main --profile <name> --cost-only
 ```
 
-Costs are calculated from: system prompt tokens + angle template tokens + estimated output tokens (from `avg_output_tokens` in config) × pricing rates in the profile.
+Costs are calculated from: system prompt tokens + shot label/intent tokens + estimated output tokens (from `avg_output_tokens` in config) × pricing rates in the profile.
 
 ## Troubleshooting
 
@@ -288,6 +255,6 @@ Costs are calculated from: system prompt tokens + angle template tokens + estima
 | `Missing config field` | Ensure all required fields exist in `openrouter_config.yaml` |
 | `Config conflict` | Remove duplicate settings — each key must be in config OR profile, not both |
 | `system_prompt.md not found` | Ensure `USER-FILES/01.CONFIG/system_prompt.md` exists |
-| `No angle templates found` | Ensure `USER-FILES/01.CONFIG/angle-templates/` contains `.txt` files |
-| `No checkbox section found` | Run your MD files through the `add-multi-checkboxes` tool |
-| `Invalid checkbox labels` | Refresh checkboxes with `add-multi-checkboxes` — angle templates may have changed |
+| `No checkbox section found` | Run `--plan` to generate the shot list and checkbox section |
+| `No shot-plan block` | Run `--plan` on the file — legacy template files must be re-planned |
+| `Invalid checkbox entries` | Run `--plan` to regenerate the shot list and checkbox section |

@@ -49,14 +49,6 @@ def parse_arguments():
         help="Override input directory (default: USER-FILES/04.INPUT)",
     )
 
-    parser.add_argument(
-        "--batch-id", type=str, help="Check status or fetch results for an existing batch"
-    )
-    parser.add_argument("--list-batches", action="store_true", help="List recent batches")
-    parser.add_argument(
-        "--wait", action="store_true", help="Wait for batch completion (use with batch mode)"
-    )
-
     return parser.parse_args()
 
 
@@ -192,11 +184,6 @@ def main():
     if args.dry_run and not args.cost_only:
         _maybe_run_selftest(config)
 
-    handler = CLIHandler(config)
-
-    if handler.handle_batch_operations(args):
-        return
-
     md_files, input_dir = discover_mds(args)
     if not md_files:
         logger.warning(f"No MD files found in {args.input_dir or 'USER-FILES/04.INPUT/'}")
@@ -211,10 +198,10 @@ def main():
 
     output_dir = get_output_directory(config, suffix="MULTI-ANGLE-MD")
 
+    handler = CLIHandler(config)
+
     if args.cost_only:
         handler.handle_cost_estimation(md_files, output_dir)
-    elif handler.batch_mode:
-        handler.handle_batch_submission(md_files, args)
     else:
         handler.handle_realtime_processing(md_files, output_dir, input_dir, args.dry_run)
 

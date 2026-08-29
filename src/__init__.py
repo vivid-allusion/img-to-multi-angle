@@ -14,8 +14,8 @@ Core Modules:
     - config: Configuration loading and validation
     - profile_manager: Profile loading and application
     - multi_angle_orchestrator: Main processing workflow
+    - shot_planner: --plan mode (shot sheet + shot list generation)
     - md_input_parser: MD file discovery and parsing
-    - angle_loader: Angle template loading
     - api_client: OpenRouter API interaction
     - cost_calculator: Token usage and cost tracking
     - reporting: Summary and failure reporting

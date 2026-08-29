@@ -1,3 +1,108 @@
+## Last Session Summary (2026-08-29) — Phase 2: Retire the angle templates; the planner proposes the shots
+
+### Feature Implementation — ✅ COMPLETE (verified live)
+
+Phase 2 (`plan/phase_2.md`) landed on `img-to-reframes` (uncommitted — commit awaits owner's go,
+see "Git state"). The shot list now comes from looking at the image, not from a fixed folder of
+17 templates. Q7–Q12 answered (all recommended options) in `USER-FILES/07.TEMP/questions.md`.
+
+### New Module (1)
+- `shot_plan.py` (139) — `ShotEntry` dataclass (full record per Q8: id `^SH\d+$`, label, intent,
+  subject_ids, grounds, recommended, reason), `shot_entries_from_list()` (duplicate ids,
+  unknown subjects vs roster, undeclared grounds vs declared assets → ValueError), and
+  `extract_shot_plan()` fence parser (absent → None; malformed → ValueError). Split out of
+  `shot_sheet.py` when it crossed 250 (memo rule)
+
+### Modules Modified (13)
+- `md_input_parser.py` — parses the ```yaml shot-plan fence (cross-checks roster + declared
+  assets at parse time); checkbox grammar now leads with the shot id (`SH01 — CU on the woman
+  {A1}`); `checked_angles`/`checked_angle_bindings` → `checked_shots`/`checked_shot_bindings`
+  (shot_id, ground_ids) — subject ids live in the plan block, never in labels
+- `checkbox_validator.py` — template matching deleted; self-referential validation: ticked id
+  must exist in the file's shot-plan block (hard fail, Q7), duplicate ticks hard-fail, unticked
+  unknown ids WARN; error messages now direct to `--plan` (§2.6 — no more add-multi-checkboxes)
+- `preflight.py` — requires the shot-plan block in rewrite mode (Q7 legacy files hard-fail);
+  passes shot ids to the validator; Q3/Q4 brace-vs-binding WARNs now read subject_ids from the
+  plan block; Q1/Q2 grounding checks and URL/vision checks untouched
+- `shot_planner.py` — json_schema extended with `shots` (id `^SH\d+$`; response-format name
+  `shot_plan`); the §2.2 recommendation rule moved verbatim into PLAN_SYSTEM_PROMPT, plus
+  intent-prose rules (Q9: intents are concrete descriptions, ids are metadata only); plan call
+  now returns (ShotSheet, shots) and aborts on undeclared grounds / unknown subjects (Q6 pattern)
+- `plan_output_writer.py` — emits shot-plan fence (full record) + `### Recommended` / neutral
+  `### Possible` (Q12) checkbox sections with `SH01 — label {A1}` labels; re-plan drops prior
+  shot-sheet AND shot-plan blocks; new sections insert after the last image embed or fenced
+  block (canonical §2.3 order: scene, master, assets, shot-sheet, shot-plan, checkboxes)
+- `user_message_template.py` + `user_message.md` — `[Dataset D — Angle template text]` replaced
+  by `[Shot label]` / `[Shot intent]`; `render_user_message(template, label, intent)`;
+  no-image-placeholders docstring stands
+- `system_prompt.md` — rules byte-identical; few-shot inputs reshaped to label + intent
+- `multi_angle_output_saver.py` — filenames `{input}_{SH01}_{label-slug}.md` (Q10); KeyError
+  guard now also covers missing label entries
+- `multi_angle_orchestrator.py` — per-shot rewrite calls: entry label + intent → one call;
+  result key = shot id; angle_loader/subject_binding imports gone; per-shot ground routing and
+  the legacy no-assets path (all refs to every shot) unchanged
+- `cli_handler.py` — BatchCommand + batch submission deleted (Q11); now 113 lines
+- `main.py` — `--batch-id`/`--list-batches`/`--wait` args + batch routing deleted
+- `dry_run_estimator.py` — estimates one plan call + one call per ticked shot (label+intent
+  tokens); files without a shot-plan block error per-file
+- `config.py` / `config_validator.py` / `config_examples.py` / `config_reporter.py` /
+  `profile_manager.py` / `cost_calculator.py` / `dry_run_report_formatter.py` / `reporting.py` —
+  `batch_mode`, `batch_config`, `require_batch_config`, batch pricing branch all deleted
+  (acceptance 9: every config key has a read site or is deleted)
+
+### Modules/Assets Deleted (10 + 17 + 1 dir)
+- `src/`: `angle_loader.py`, `shot_feasibility.py`, `subject_binding.py` + 7 batch modules
+  (`batch_request_builder`, `batch_processor`, `batch_monitor`, `batch_result_parser`,
+  `batch_result_saver`, `batch_formatter`, `batch_report_generator`)
+- `USER-FILES/01.CONFIG/angle-templates/` — 17 template `.md` deleted; **`NEW.md` moved to
+  `USER-FILES/00.KB/`** (the owner's notes, preserved)
+- YAML keys: `batch_config` (openrouter_config.yaml); `batch_mode`, `pricing.batch`,
+  `capabilities.context_window` + `capabilities.supports_batching` (profile)
+
+### Questions resolved this session
+Q7–Q12 (all recommended options): legacy files hard-fail → run `--plan`; shot-plan block in the
+MD carries the full record (keeps Phase-1 Q3/Q4 WARNs firing); intents are concrete prose with
+subject_ids as metadata; `{input}_SH01_{slug}.md` filenames; batch path deleted entirely;
+neutral `### Possible` heading.
+
+### Verification (§2.7) — ALL PASSED live where it matters
+- **Live `--plan` (car exterior, BMW M3 on a palm street)**: strict json_schema accepted;
+  proposed "Front Grille Insert — close-up on the front fascia, headlights, and badge" — a
+  detail insert no template could express (bullet 1); SH03 "Driver Interior Shot" listed
+  unticked under `### Possible` with the stated reason "Windshield reflections and dark interior
+  completely obscure the driver" (bullet 2); `04.INPUT/` untouched (input was /tmp), sha-verified
+- **Live rewrite run** (3 ticked shots incl. a deliberate Possible): 3/3 atomic promotion;
+  prompts 85–89 words, verbatim preservation clause, no braces/placeholder/id leaks (bullet 4);
+  per-shot routing: SH01/SH02 (`{}`) → master only, SH03 (`{A1}`) → master + A1 (acceptance 1);
+  filenames `car_interior_SH01_vehicle_wide_shot.md` etc. (Q10); frame-composer format unchanged
+  (acceptance 11)
+- **Offline battery (43 checks)**: parser/validator/writer round-trips (enriched MD re-parses
+  identically), duplicate ids, undeclared grounds, unknown subjects, legacy no-assets path
+  (2 image parts, label+intent rendered, both embeds), `--cost-only` exit 0
+- **Deliberate-failure battery (5)**: 404 URL / text/html / text-only model (deepseek-chat) /
+  ticked SH99 absent from shot-plan / monkeypatched payload → all exit 1 with **zero output
+  directories** (bullet 5); undeclared-ground file aborts exit 1, zero dirs (acceptance 3)
+- `--selftest` PASS live; `--list-profiles`, `--dry-run` unchanged; compileall clean; 0 print(),
+  0 TODO/FIXME in src/
+
+### Git state
+Phase 2 is uncommitted on `img-to-reframes` (57 changed paths staged/unstaged: 10 deleted
+modules, 17 deleted template files, NEW.md rename, 14 modified files, 1 new module). Commit
+awaits the owner's go per repo discipline.
+
+### Still open (unchanged, previously archived)
+- `retry_config`/`stream`/`processing_options.*` validated but never read; no client timeout
+- `summary_report.md` references a COST.md nothing writes; "Profile: Unknown" in profile logs
+- `stats["failed"]`/`stats["errors"]` dead paths; preflight failures surface as raw tracebacks
+- `multi_angle_orchestrator.py` 274 lines (+6 this phase — pre-existing justified overage)
+- `frame-composer`/`add-multi-checkboxes` external repos untouched (§2.6 note recorded)
+
+### Next Phase
+- Phase 3 — client timeout, base_orchestrator/config rename, reporting cleanup, cli_handler
+  shrink (plan/phase_3.md). Entry gate met (Phase 2 verified live).
+
+---
+
 ## Last Session Summary (2026-08-29) — Phase 1: Typed assets and per-shot reference routing
 
 ### Feature Implementation — ✅ COMPLETE (verified live)

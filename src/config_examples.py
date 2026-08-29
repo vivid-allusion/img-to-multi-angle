@@ -7,17 +7,11 @@ FIELD_EXAMPLES = {
     'temperature': 0.3,
     'stream': False,
     'avg_output_tokens': 800,
-    'batch_mode': True,
     'trim_prompts': True,
     'normalize_spaces': True,
     'max_prompt_length': 5900,
     'include_filename': False,
     'max_retries': 2,
     'timeout': 600.0,
-    'max_requests_per_batch': 10000,
-    'batch_request_dir': 'USER-FILES/05.OUTPUT/batch_requests',
-    'save_batch_request_file': True,
-    'check_interval_minutes': 5,
-    'max_wait_hours': 24,
     'cache_ttl': '5m'
 }

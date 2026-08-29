@@ -61,7 +61,6 @@ def generate_summary(output_dir: Path, stats: Dict[str, Any],
 - Temperature: {config['temperature']}
 - Max Tokens: {config['max_tokens']}
 - Fields Removed: {', '.join(config.get('fields_to_remove', []))}
-- Batch Mode: {config['batch_mode']}
 """
     
     if config.get('prompt_suffix'):

@@ -9,11 +9,9 @@ from loguru import logger
 
 from .base_orchestrator import BaseOrchestrator
 from .md_input_parser import parse_md_file
-from .angle_loader import load_angle_templates
 from .user_message_template import load_user_message_template, render_user_message
 from .payload_builder import build_user_content
 from .api_client import process_text, build_system_prompt
-from .subject_binding import substitute_subject
 from .multi_angle_output_saver import save_angle_outputs
 from .data_models import ProcessingResult, UsageData
 from .exceptions import FileProcessingError
@@ -31,9 +29,7 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         """
         super().__init__(config)
         self.input_dir = input_dir
-        self.angle_template_dir = Path("USER-FILES/01.CONFIG/angle-templates")
         self.user_message_path = Path("USER-FILES/01.CONFIG/user_message.md")
-        self.angles: Dict[str, str] = {}
         self.um_template: str = ""
 
     def process_batch(
@@ -59,7 +55,6 @@ class MultiAngleOrchestrator(BaseOrchestrator):
             "errors": [],
         }
 
-        self.angles = load_angle_templates(self.angle_template_dir)
         self.um_template = load_user_message_template(self.user_message_path)
 
         for md_path in files:
@@ -77,7 +72,7 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         client: OpenRouter,
         output_dir: Path,
     ) -> ProcessingResult:
-        """Process one MD file across all angles.
+        """Process one MD file across all checked shots.
 
         Args:
             md_path: Path to MD file
@@ -85,14 +80,14 @@ class MultiAngleOrchestrator(BaseOrchestrator):
             output_dir: Output directory (staging during real runs)
 
         Raises:
-            FileProcessingError: If any angle call fails — the run must abort
+            FileProcessingError: If any shot call fails — the run must abort
         """
         input_name = md_path.stem
 
         parsed = parse_md_file(md_path)
 
-        if not parsed.checked_angles:
-            logger.warning(f"Skipping {md_path.name}: no angles selected")
+        if not parsed.checked_shots:
+            logger.warning(f"Skipping {md_path.name}: no shots selected")
             from .multi_angle_output_saver import copy_raw_md_file
             copy_raw_md_file(md_path, output_dir)
             return ProcessingResult(
@@ -103,10 +98,10 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                 cost=0.0,
             )
 
-        logger.info(f"Processing: {md_path.name} ({len(parsed.checked_angle_bindings)} of {len(self.angles)} angles)")
+        logger.info(f"Processing: {md_path.name} ({len(parsed.checked_shots)} of {len(parsed.shot_entries or [])} shots)")
 
         cache_config = self.config.get("cache_config", {})
-        use_cache = cache_config.get("enabled", False) and len(parsed.checked_angles) >= 2
+        use_cache = cache_config.get("enabled", False) and len(parsed.checked_shots) >= 2
         cache_ttl = cache_config.get("cache_ttl") if use_cache else None
         if use_cache:
             logger.info(f"Prompt caching active for {md_path.name} (TTL: {cache_ttl})")
@@ -118,12 +113,20 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         else:
             assets_by_id = {}
 
+        entries_by_id = {e.id: e for e in parsed.shot_entries or []}
+
         angle_results = {}
         grounds_by_angle: Dict[str, List[str]] = {}
+        labels_by_shot: Dict[str, str] = {}
         total_usage: Dict[str, Any] = {}
-        for angle_name, subject_ids, ground_ids in parsed.checked_angle_bindings:
-            angle_text = substitute_subject(self.angles[angle_name], subject_ids, parsed.shot_sheet)
-            user_msg = render_user_message(self.um_template, angle_text)
+        for shot_id, ground_ids in parsed.checked_shot_bindings:
+            entry = entries_by_id.get(shot_id)
+            if entry is None:
+                raise FileProcessingError(
+                    f"{md_path.name}: ticked shot '{shot_id}' not found in the "
+                    "shot-plan block"
+                )
+            user_msg = render_user_message(self.um_template, entry.label, entry.intent)
 
             if parsed.assets is None:
                 shot_refs = parsed.ref_images
@@ -146,13 +149,11 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                     user_content, client, self.config, system_prompt=system_prompt
                 )
             except Exception as e:
-                raise FileProcessingError(f"{md_path.name} angle '{angle_name}': {e}") from e
+                raise FileProcessingError(f"{md_path.name} shot '{shot_id}': {e}") from e
 
-            result_key = (
-                angle_name if not subject_ids else f"{angle_name}_{'_'.join(subject_ids)}"
-            )
-            angle_results[result_key] = response_text
-            grounds_by_angle[result_key] = ground_urls
+            angle_results[shot_id] = response_text
+            grounds_by_angle[shot_id] = ground_urls
+            labels_by_shot[shot_id] = entry.label
 
             if usage_data:
                 for key in (
@@ -165,7 +166,12 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                     total_usage[key] = total_usage.get(key, 0) + usage_data.get(key, 0)
 
         saved_files = save_angle_outputs(
-            output_dir, input_name, angle_results, parsed.original_image, grounds_by_angle
+            output_dir,
+            input_name,
+            angle_results,
+            parsed.original_image,
+            grounds_by_angle,
+            labels_by_shot,
         )
 
         usage = UsageData(

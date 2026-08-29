@@ -7,7 +7,6 @@ from loguru import logger
 
 from .dry_run_report_formatter import DryRunReportFormatter
 from .md_input_parser import parse_md_file
-from .angle_loader import load_angle_templates
 
 
 class DryRunEstimator:
@@ -23,25 +22,34 @@ class DryRunEstimator:
         self.config = config
         self.client = OpenRouter(api_key=api_key)
 
-    def estimate_md_file_cost(
-        self, md_path: Path, angles: Dict[str, str]
-    ) -> Dict[str, Any]:
-        """Estimate cost for one MD file across all angles.
+    def estimate_md_file_cost(self, md_path: Path) -> Dict[str, Any]:
+        """Estimate cost for one MD file across all checked shots.
 
         Args:
             md_path: Path to MD file
-            angles: Dict of angle_name -> template content
 
         Returns:
             Dictionary with token counts and estimated cost
         """
         parsed = parse_md_file(md_path)
 
+        if parsed.shot_entries is None:
+            raise ValueError(f"{md_path.name}: no shot-plan block — run --plan first")
+
+        entries_by_id = {e.id: e for e in parsed.shot_entries}
+        shots = []
+        for shot_id in parsed.checked_shots:
+            entry = entries_by_id.get(shot_id)
+            if entry is None:
+                raise ValueError(
+                    f"{md_path.name}: ticked shot '{shot_id}' not in the shot-plan block"
+                )
+            shots.append(entry)
+
         system_tokens = len(self.config["system_prompt"]) // 4
         scene_tokens = len(parsed.scene) // 4
 
-        angles_to_use = {k: v for k, v in angles.items() if k in parsed.checked_angles} if parsed.checked_angles else angles
-        angle_tokens = sum(len(t) // 4 for t in angles_to_use.values())
+        shot_tokens = sum((len(e.label) + len(e.intent)) // 4 for e in shots)
 
         if "avg_output_tokens" not in self.config:
             raise ValueError("Missing 'avg_output_tokens' in configuration")
@@ -53,13 +61,13 @@ class DryRunEstimator:
         plan_input = len(PLAN_INSTRUCTION) // 4
         plan_output = avg_output
 
-        total_input = system_tokens + scene_tokens + angle_tokens + plan_input
-        total_output = avg_output * len(angles_to_use) + plan_output
+        total_input = system_tokens + scene_tokens + shot_tokens + plan_input
+        total_output = avg_output * len(shots) + plan_output
 
         return {
             "input_tokens": total_input,
             "output_tokens": total_output,
-            "num_angles": len(angles_to_use),
+            "num_shots": len(shots),
         }
 
     def estimate_all_md_files(self, md_files: List[Path]) -> Dict[str, Any]:
@@ -71,9 +79,6 @@ class DryRunEstimator:
         Returns:
             Dictionary with estimation results
         """
-        angle_dir = Path("USER-FILES/01.CONFIG/angle-templates")
-        angles = load_angle_templates(angle_dir)
-
         logger.warning(
             "Image input tokens are NOT included in this estimate — real costs will be higher"
         )
@@ -81,35 +86,30 @@ class DryRunEstimator:
         results = {
             "estimated_files": 0,
             "total_estimated_cost": 0.0,
-            "total_angles": 0,
+            "total_shots": 0,
             "file_estimates": [],
         }
 
         for md_file in md_files:
             try:
-                usage_data = self.estimate_md_file_cost(md_file, angles)
+                usage_data = self.estimate_md_file_cost(md_file)
 
                 from .cost_calculator import calculate_cost
 
-                cost = calculate_cost(
-                    usage_data,
-                    self.config,
-                    self.config["model"],
-                    self.config["batch_mode"],
-                )
+                cost = calculate_cost(usage_data, self.config, self.config["model"])
 
                 results["file_estimates"].append(
                     {
                         "filename": md_file.name,
                         "input_tokens": usage_data["input_tokens"],
                         "output_tokens": usage_data["output_tokens"],
-                        "num_angles": usage_data["num_angles"],
+                        "num_shots": usage_data["num_shots"],
                         "estimated_cost": cost,
                     }
                 )
 
                 results["estimated_files"] += 1
-                results["total_angles"] += usage_data["num_angles"]
+                results["total_shots"] += usage_data["num_shots"]
                 results["total_estimated_cost"] += cost
 
             except Exception as e:

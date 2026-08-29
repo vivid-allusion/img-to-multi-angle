@@ -1,25 +1,22 @@
 """--plan mode: one vision call per input file producing a strict shot sheet
-(§3.2/§3.3). Owns the plan-mode orchestration: preflight, staging, atomic
-promotion (Q16 — the prime directive covers --plan too)."""
+plus a shot list (phase_2 §2.2). Owns the plan-mode orchestration: preflight,
+staging, atomic promotion (Q16 — the prime directive covers --plan too)."""
 
 import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from openrouter import OpenRouter
 from loguru import logger
 
 from .auth import get_api_key
 from .api_client import process_text
-from .angle_loader import load_angle_template_objects
 from .md_input_parser import ParsedMdInput, parse_md_file
+from .shot_plan import ShotEntry, shot_entries_from_list
 from .shot_sheet import ShotSheet, shot_sheet_from_dict
 from .payload_builder import build_user_content
-from .shot_feasibility import build_shot_entries
-
-ANGLE_TEMPLATE_DIR = Path("USER-FILES/01.CONFIG/angle-templates")
 
 PLAN_SYSTEM_PROMPT = (
     "You are a film production assistant. Given the original scene image, produce a factual "
@@ -29,11 +26,20 @@ PLAN_SYSTEM_PROMPT = (
     "in the image. Reference images labelled as assets may also be provided. Bind a "
     "subject's 'asset' field to the asset id that best depicts that subject, and only when "
     "you are confident it is the same person or object; otherwise leave it null. A wrong "
-    "binding is worse than none."
+    "binding is worse than none. Then propose a shot list for this scene: specific shots "
+    "that a reframing tool can crop or pan out of the master, including prop and detail "
+    "inserts (a radio, hands on a wheel, eyes) when they are legible in the master. Give "
+    "every shot a short label, an intent written as concrete prose naming subjects by "
+    "their description (never by id — the id is metadata in subject_ids), and a reason. "
+    "Recommend a shot only when the pixels needed for it are actually present in the "
+    "master. Do not recommend a punch-in on a subject who is occluded, or a tight shot "
+    "(MCU/CU/ECU) on a subject whose face is not visible. A shot you cannot ground is "
+    "still worth listing — mark it not recommended and say why."
 )
 
 PLAN_INSTRUCTION = (
-    "Analyse the provided image and return the shot sheet for this scene as JSON."
+    "Analyse the provided image and return the shot sheet and the shot list for this "
+    "scene as JSON."
 )
 
 SHOT_SHEET_SCHEMA = {
@@ -79,22 +85,47 @@ SHOT_SHEET_SCHEMA = {
         },
         "lighting": {"type": "string"},
         "notes": {"type": "string"},
+        "shots": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "pattern": "^SH[0-9]+$"},
+                    "label": {"type": "string"},
+                    "intent": {"type": "string"},
+                    "subject_ids": {
+                        "type": "array",
+                        "items": {"type": "string", "pattern": "^S[0-9]+$"},
+                    },
+                    "grounds": {
+                        "type": "array",
+                        "items": {"type": "string", "pattern": "^A[0-9]+$"},
+                    },
+                    "recommended": {"type": "boolean"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["id", "label", "intent", "subject_ids",
+                             "grounds", "recommended", "reason"],
+                "additionalProperties": False,
+            },
+        },
     },
     "required": ["scene_type", "shot_size", "camera_height", "subject_count",
-                 "subjects", "props", "lighting", "notes"],
+                 "subjects", "props", "lighting", "notes", "shots"],
     "additionalProperties": False,
 }
 
 RESPONSE_FORMAT = {
     "type": "json_schema",
-    "json_schema": {"name": "shot_sheet", "strict": True, "schema": SHOT_SHEET_SCHEMA},
+    "json_schema": {"name": "shot_plan", "strict": True, "schema": SHOT_SHEET_SCHEMA},
 }
 
 
 def plan_file(
     parsed: ParsedMdInput, filename: str, client: OpenRouter, config: Dict[str, Any]
-) -> ShotSheet:
-    """One vision call → ShotSheet. Plan calls are exempt from the token floor (Q4).
+) -> Tuple[ShotSheet, List[ShotEntry]]:
+    """One vision call → (ShotSheet, shot list). Plan calls are exempt from the
+    token floor (Q4).
 
     With declared assets the plan call receives every asset as a labelled
     image part (phase_1 §1.2); legacy files pass bare ref URLs as before.
@@ -141,7 +172,16 @@ def plan_file(
                 f"'{subject.asset}' — aborting plan (declared: {sorted(declared_ids)})"
             )
 
-    return sheet
+    roster = {s.id for s in sheet.subjects}
+    asset_check = declared_ids if parsed.assets is not None else None
+    try:
+        entries = shot_entries_from_list(
+            data["shots"], filename, roster=roster, declared_assets=asset_check
+        )
+    except (KeyError, TypeError, ValueError) as e:
+        raise RuntimeError(f"{filename}: plan call returned an invalid shot list: {e}") from e
+
+    return sheet, entries
 
 
 def run_plan_mode(
@@ -161,15 +201,13 @@ def run_plan_mode(
     staging_dir = create_staging_dir(output_dir)
     setup_logging(staging_dir)
 
-    templates = load_angle_template_objects(ANGLE_TEMPLATE_DIR)
     start_time = datetime.now()
 
     try:
         for md_path in md_files:
             logger.info(f"Planning: {md_path.name}")
             parsed = parse_md_file(md_path)
-            sheet = plan_file(parsed, md_path.name, client, config)
-            entries = build_shot_entries(templates, sheet)
+            sheet, entries = plan_file(parsed, md_path.name, client, config)
 
             from .plan_output_writer import write_enriched_md
 

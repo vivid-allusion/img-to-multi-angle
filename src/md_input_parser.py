@@ -8,13 +8,13 @@ from natsort import natsorted
 from loguru import logger
 
 from .assets import Asset, extract_assets_block
+from .shot_plan import ShotEntry, extract_shot_plan
 from .shot_sheet import ShotSheet, extract_shot_sheet
 
 MD_IMAGE_PATTERN = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 MD_LINK_PATTERN = re.compile(r"!?\[[^\]]*\]\([^)]+\)")
 URL_PATTERN = re.compile(r"https?://|www\.", re.IGNORECASE)
 CHECKBOX_PATTERN = re.compile(r"^-\s\[[ xX]\]\s.+$")
-SUBJECT_ID_PATTERN = re.compile(r"\bS\d+\b")
 GROUNDS_PATTERN = re.compile(r"\s*\{([^}]*)\}\s*$")
 
 
@@ -25,11 +25,12 @@ class ParsedMdInput:
     scene: str
     original_image: str
     ref_images: List[str]
-    checked_angles: List[str]
+    checked_shots: List[str]
     all_checkbox_lines: List[str]
     shot_sheet: Optional[ShotSheet] = None
     shot_sheet_text: Optional[str] = None
-    checked_angle_bindings: List[Tuple[str, List[str], Optional[List[str]]]] = field(
+    shot_entries: Optional[List[ShotEntry]] = None
+    checked_shot_bindings: List[Tuple[str, Optional[List[str]]]] = field(
         default_factory=list
     )
     assets: Optional[List[Asset]] = None
@@ -64,24 +65,23 @@ def _is_checkbox_line(line: str) -> bool:
     return bool(CHECKBOX_PATTERN.match(line.strip()))
 
 
-def _parse_checkbox_line(line: str) -> tuple[str, List[str], Optional[List[str]], bool]:
-    """Parse a checkbox line into (angle_name, subject_ids, ground_ids, is_checked).
+def _parse_checkbox_line(line: str) -> tuple[str, Optional[List[str]], bool]:
+    """Parse a checkbox line into (shot_id, ground_ids, is_checked).
 
-    Labels may carry a subject suffix after an em dash (Q15 dual grammar):
-        "Close Up — S1 (older man in dark overcoat)"
-        "Over The Shoulder — S1 over S2"
-    Plain labels (generic tool) yield an empty subject_ids list.
+    Labels lead with the shot id (phase_2 §2.3): "SH01 — CU on the woman {A1}".
+    The display text after the em dash is cosmetic — the shot-plan block is
+    authoritative for label and intent.
 
-    A trailing grounding list (phase_1 §1.3) is stripped from the label:
-        "Close Up — S1 (woman) {A1}"  -> ground_ids ["A1"]
-        "Close Up — S1 (woman) {}"    -> ground_ids []
-        "Close Up — S1 (woman)"       -> ground_ids None (no list present)
+    A trailing grounding list (phase_1 §1.3) is stripped:
+        "SH01 — CU on the woman {A1}"  -> ground_ids ["A1"]
+        "SH07 — XCU on the radio {}"   -> ground_ids []
+        "SH01 — CU on the woman"       -> ground_ids None (no list present)
 
     Args:
-        line: Raw checkbox line like '- [x] Close Up — S1 (older man) {A1}'
+        line: Raw checkbox line like '- [x] SH01 — CU on the woman {A1}'
 
     Returns:
-        Tuple of (normalized_angle_name, subject_ids, ground_ids, is_checked)
+        Tuple of (shot_id, ground_ids, is_checked)
     """
     stripped = line.strip()
     is_checked = stripped.startswith("- [x]") or stripped.startswith("- [X]")
@@ -94,14 +94,11 @@ def _parse_checkbox_line(line: str) -> tuple[str, List[str], Optional[List[str]]
         label = label[: grounds_match.start()].rstrip()
 
     if " — " in label:
-        angle_part, subject_part = label.split(" — ", 1)
-        subject_ids = SUBJECT_ID_PATTERN.findall(subject_part)
+        shot_id = label.split(" — ", 1)[0].strip()
     else:
-        angle_part = label
-        subject_ids = []
+        shot_id = label.strip()
 
-    normalized = angle_part.replace(" ", "_")
-    return normalized, subject_ids, ground_ids, is_checked
+    return shot_id, ground_ids, is_checked
 
 
 def _is_skippable_line(line: str) -> bool:
@@ -117,7 +114,8 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
         Lines before first image: scene description (Dataset A); lines
             matching embeds/links/URLs are skipped and logged
         First image line: ![original](url) (Dataset B)
-        Then checkbox lines - [ ] / - [x] (Dataset E)
+        Optional ```yaml shot-sheet and ```yaml shot-plan blocks
+        Then checkbox lines - [ ] / - [x] leading with shot ids (phase_2 §2.3)
         Then ![ref](url) lines (Dataset C)
 
     Args:
@@ -190,15 +188,15 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
         else:
             in_checkbox_section = False
 
-    checked_angles = []
+    checked_shots = []
     all_checkbox_labels = []
-    checked_angle_bindings = []
+    checked_shot_bindings = []
     for cb_line in checkbox_lines:
-        angle_name, subject_ids, ground_ids, is_checked = _parse_checkbox_line(cb_line)
-        all_checkbox_labels.append(angle_name)
+        shot_id, ground_ids, is_checked = _parse_checkbox_line(cb_line)
+        all_checkbox_labels.append(shot_id)
         if is_checked:
-            checked_angles.append(angle_name)
-            checked_angle_bindings.append((angle_name, subject_ids, ground_ids))
+            checked_shots.append(shot_id)
+            checked_shot_bindings.append((shot_id, ground_ids))
 
     ref_images = []
     for line in ref_image_lines:
@@ -207,6 +205,12 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
             ref_images.append(match.group(2))
 
     shot_sheet, shot_sheet_text = extract_shot_sheet(content, file_path.name)
+
+    declared_assets = {a.id for a in assets} if assets is not None else None
+    roster = {s.id for s in shot_sheet.subjects} if shot_sheet else None
+    shot_entries = extract_shot_plan(
+        content, file_path.name, roster=roster, declared_assets=declared_assets
+    )
 
     if assets is None:
         logger.info(
@@ -217,8 +221,9 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
     logger.info(
         f"Parsed {file_path.name}: scene={len(scene)} chars, "
         f"original_image=1, checkboxes={len(checkbox_lines)}, "
-        f"checked={len(checked_angles)}, ref_images={len(ref_images)}, "
+        f"checked={len(checked_shots)}, ref_images={len(ref_images)}, "
         f"shot_sheet={'yes' if shot_sheet else 'no'}, "
+        f"shot_plan={'yes' if shot_entries is not None else 'no'}, "
         f"assets={'yes' if assets is not None else 'no'}"
     )
 
@@ -226,10 +231,11 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
         scene=scene,
         original_image=original_image,
         ref_images=ref_images,
-        checked_angles=checked_angles,
+        checked_shots=checked_shots,
         all_checkbox_lines=checkbox_lines,
         shot_sheet=shot_sheet,
         shot_sheet_text=shot_sheet_text,
-        checked_angle_bindings=checked_angle_bindings,
+        shot_entries=shot_entries,
+        checked_shot_bindings=checked_shot_bindings,
         assets=assets,
     )

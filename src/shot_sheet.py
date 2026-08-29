@@ -1,8 +1,8 @@
 """Shot-sheet model: dataclasses, YAML-block extraction, and dict conversion.
 
 The shot sheet is produced by --plan's vision call (shot_planner) and consumed
-by the rewrite pipeline (md_input_parser → orchestrator) and the feasibility
-classifier (shot_feasibility). Schema per plan §3.3 + Q13 (`occluded`).
+by the rewrite pipeline (md_input_parser → orchestrator). Schema per plan §3.3
++ Q13 (`occluded`). The shot list lives in shot_plan.py (phase_2 §2.2).
 """
 
 import re

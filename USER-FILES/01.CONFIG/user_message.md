@@ -1,14 +1,16 @@
 # Multi-Angle Reframing
 
-Here is the angle template you need to rewrite:
+Here is the shot to rewrite:
 
-[Dataset D — Angle template text]
+Label: [Shot label]
 
-Look at the original image and the scene description. Based on both, rewrite the angle template into a specific image-to-image reframing prompt.
+Intent: [Shot intent]
+
+Look at the original image and the scene description. Based on both, rewrite the shot's label and intent into a specific image-to-image reframing prompt.
 
 The rewritten prompt must:
 - Start with "Reframe the provided image of [brief scene summary]"
-- Apply the camera angle from the template to the specific subjects and composition in the original image
+- Apply the shot's intent to the specific subjects and composition in the original image
 - Preserve all character details, objects, and environment from the scene description
 - Be a single, standalone prompt ready for an image-to-image model
 

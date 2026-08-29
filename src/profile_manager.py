@@ -85,15 +85,12 @@ def list_available_profiles() -> List[str]:
                         else:
                             model_display = str(profile["model"])
 
-                    batch_mode = profile.get("batch_mode", False)
-                    mode_str = "BATCH" if batch_mode else "REAL-TIME"
-
                     profile_name = yaml_file.stem
                     if "metadata" in profile:
                         profile_name = profile["metadata"].get("profile_name", yaml_file.stem)
 
                     status = "✓" if enabled else "✗"
-                    profiles.append(f"  {status} {yaml_file.name:<45} [{model_display:<20}] ({mode_str})")
+                    profiles.append(f"  {status} {yaml_file.name:<45} [{model_display:<20}]")
         except Exception as e:
             profiles.append(f"  ✗ {yaml_file.name:<45} - Error loading: {e}")
 
@@ -134,18 +131,6 @@ def _apply_parameters(config: Dict[str, Any], profile: Dict[str, Any]) -> None:
             config[key] = params[key]
 
 
-def _apply_batch_mode(config: Dict[str, Any], profile: Dict[str, Any]) -> None:
-    """Apply batch mode configuration from profile."""
-    if "batch_mode" not in profile:
-        return
-
-    config["batch_mode"] = profile["batch_mode"]
-    logger.info(f"Batch mode: {profile['batch_mode']}")
-
-    if profile["batch_mode"] and "batch_config" in config:
-        logger.info("Batch mode enabled - using batch settings from API config")
-
-
 def _apply_pricing(config: Dict[str, Any], profile: Dict[str, Any]) -> None:
     """Apply pricing configuration from profile."""
     if "pricing" not in profile:
@@ -153,12 +138,8 @@ def _apply_pricing(config: Dict[str, Any], profile: Dict[str, Any]) -> None:
         return
 
     pricing = profile["pricing"]
-    batch_mode = profile.get("batch_mode", False)
 
-    if batch_mode and "batch" in pricing:
-        config["pricing"] = pricing["batch"]
-        logger.info("Using batch pricing from profile (50% discount)")
-    elif "real_time" in pricing:
+    if "real_time" in pricing:
         config["pricing"] = pricing["real_time"]
         logger.info("Using real-time pricing from profile")
     else:
@@ -219,7 +200,6 @@ def apply_profile_to_config(config: Dict[str, Any], profile: Dict[str, Any]) -> 
     """
     _apply_model_config(config, profile)
     _apply_parameters(config, profile)
-    _apply_batch_mode(config, profile)
     _apply_pricing(config, profile)
     _apply_cache_config(config, profile)
     _apply_prompt_suffix(config, profile)

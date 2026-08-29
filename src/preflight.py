@@ -9,10 +9,8 @@ from openrouter import OpenRouter
 from loguru import logger
 
 from .md_input_parser import parse_md_file, _parse_checkbox_line, ParsedMdInput
-from .angle_loader import load_angle_template_objects
 from .checkbox_validator import validate_checkboxes
 
-ANGLE_TEMPLATE_DIR = Path("USER-FILES/01.CONFIG/angle-templates")
 MAX_IMAGE_BYTES = 20_000_000
 
 
@@ -55,7 +53,7 @@ def _check_groundings(filename: str, parsed: ParsedMdInput, plan_mode: bool) -> 
         return
 
     for line in parsed.all_checkbox_lines:
-        _, _, ground_ids, _ = _parse_checkbox_line(line)
+        _, ground_ids, _ = _parse_checkbox_line(line)
         if ground_ids is None:
             raise PreflightError(
                 f"{filename}: checkbox entry has no grounding list — append braces "
@@ -72,23 +70,27 @@ def _check_groundings(filename: str, parsed: ParsedMdInput, plan_mode: bool) -> 
         return
 
     assets_by_subject = {s.id: s.asset for s in parsed.shot_sheet.subjects}
-    for angle_name, subject_ids, ground_ids in parsed.checked_angle_bindings:
+    entries_by_id = {e.id: e for e in parsed.shot_entries or []}
+    for shot_id, ground_ids in parsed.checked_shot_bindings:
+        entry = entries_by_id.get(shot_id)
+        if entry is None:
+            continue
         bound = {
             assets_by_subject[sid]
-            for sid in subject_ids
+            for sid in entry.subject_ids
             if assets_by_subject.get(sid)
         }
         braces = set(ground_ids or [])
         if bound - braces:
             logger.warning(
-                f"{filename}: '{angle_name}' — bound subject asset(s) "
+                f"{filename}: '{shot_id}' — bound subject asset(s) "
                 f"{sorted(bound - braces)} not in grounds; master-only grounding "
                 "accepted as a deliberate override"
             )
         if braces - bound:
             logger.warning(
-                f"{filename}: '{angle_name}' — grounds {sorted(braces - bound)} "
-                "not bound to any subject in the shot sheet; braces remain "
+                f"{filename}: '{shot_id}' — grounds {sorted(braces - bound)} "
+                "not bound to any subject in the shot plan; braces remain "
                 "authoritative"
             )
 
@@ -99,24 +101,27 @@ def run_preflight(
     client: OpenRouter,
     plan_mode: bool = False,
 ) -> PreflightReport:
-    """Run all preflight checks in order. Raises on the first failure.
+    """    Run all preflight checks in order. Raises on the first failure.
 
     plan_mode: checkbox validation is skipped (Q19 — --plan accepts files
     without a checkbox section); URL/vision/config checks still run. The
     Q2/brace grammar checks are rewrite-mode only; the Q1 declaration check
     and asset URL checks run in both modes.
     """
-    templates = load_angle_template_objects(ANGLE_TEMPLATE_DIR)
-    available_angles = set(templates.keys())
-
     parsed_files = []
     for md_path in md_files:
         parsed = parse_md_file(md_path)
         if not plan_mode:
-            roster = {s.id for s in parsed.shot_sheet.subjects} if parsed.shot_sheet else None
+            if parsed.shot_entries is None:
+                raise PreflightError(
+                    f"{md_path.name}: no shot-plan block — run --plan on this "
+                    "file first to generate the shot list (Q7: legacy template "
+                    "files must be re-planned)"
+                )
             validate_checkboxes(
-                parsed.all_checkbox_lines, available_angles, md_path.name,
-                roster=roster, templates=templates,
+                parsed.all_checkbox_lines,
+                {e.id for e in parsed.shot_entries},
+                md_path.name,
             )
         _check_groundings(md_path.name, parsed, plan_mode)
         parsed_files.append((md_path.name, parsed))

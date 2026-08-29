@@ -1,4 +1,9 @@
-"""Enriched MD writer for --plan output (Q17: verbatim copy + checkbox replacement)."""
+"""Enriched MD writer for --plan output (Q17: verbatim copy + checkbox replacement).
+
+Phase 2 §2.3: the new section is the shot-sheet block + shot-plan block +
+Recommended/Possible checkbox sections (Q12: neutral "Possible" heading; Q8:
+the shot-plan block carries the full record).
+"""
 
 import re
 from pathlib import Path
@@ -7,11 +12,16 @@ from typing import List
 import yaml
 
 from .md_input_parser import CHECKBOX_PATTERN
-from .shot_sheet import ShotSheet, SHOT_SHEET_FENCE
-from .shot_feasibility import ShotEntry, HEADING_COVERAGE, HEADING_STRETCH
+from .assets import ASSETS_FENCE
+from .shot_plan import SHOT_PLAN_FENCE, ShotEntry
+from .shot_sheet import SHOT_SHEET_FENCE, ShotSheet
 
 MD_IMAGE_PATTERN = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 HEADING_PATTERN = re.compile(r"^#{1,6}\s")
+FENCE_NAMES = (ASSETS_FENCE, SHOT_SHEET_FENCE, SHOT_PLAN_FENCE)
+
+HEADING_RECOMMENDED = "### Recommended"
+HEADING_POSSIBLE = "### Possible"
 
 
 def _render_shot_sheet_block(sheet: ShotSheet) -> str:
@@ -41,35 +51,50 @@ def _render_shot_sheet_block(sheet: ShotSheet) -> str:
     return f"{SHOT_SHEET_FENCE}\n{body}\n```"
 
 
-def _grounds_for(entry: ShotEntry, sheet: ShotSheet) -> str:
-    """Braces for one entry, derived from its subjects' asset bindings (§1.3).
+def _render_shot_plan_block(entries: List[ShotEntry]) -> str:
+    """Serialize the shot list back into its fenced YAML block (full record, Q8)."""
+    data = [
+        {
+            "id": e.id,
+            "label": e.label,
+            "intent": e.intent,
+            "subject_ids": e.subject_ids,
+            "grounds": e.grounds,
+            "recommended": e.recommended,
+            "reason": e.reason,
+        }
+        for e in entries
+    ]
+    body = yaml.safe_dump(data, sort_keys=False, allow_unicode=True).rstrip("\n")
+    return f"{SHOT_PLAN_FENCE}\n{body}\n```"
 
-    The master is implicit and never listed; no bindings → "{}".
+
+def _grounds_for(entry: ShotEntry) -> str:
+    """Braces for one entry, derived from its declared grounds (phase_1 §1.3).
+
+    The master is implicit and never listed; no grounds → "{}".
     """
-    ground_ids = []
-    for sid in entry.subject_ids:
-        subject = next((s for s in sheet.subjects if s.id == sid), None)
-        if subject and subject.asset and subject.asset not in ground_ids:
-            ground_ids.append(subject.asset)
-    return "{" + ", ".join(ground_ids) + "}"
+    return "{" + ", ".join(entry.grounds) + "}"
 
 
 def _new_section_lines(sheet: ShotSheet, entries: List[ShotEntry]) -> List[str]:
-    """The shot-sheet block + Coverage/Stretch sections that replace checkboxes."""
+    """The shot-sheet + shot-plan blocks and checkbox sections that replace
+    the old checkbox list."""
     lines = _render_shot_sheet_block(sheet).splitlines()
     lines.append("")
+    lines.extend(_render_shot_plan_block(entries).splitlines())
+    lines.append("")
 
-    for heading, ticked_only in ((HEADING_COVERAGE, None), (HEADING_STRETCH, False)):
-        heading_entries = [
-            e for e in entries
-            if e.heading == heading and (ticked_only is None or e.ticked == ticked_only)
-        ]
+    for heading, heading_entries in (
+        (HEADING_RECOMMENDED, [e for e in entries if e.recommended]),
+        (HEADING_POSSIBLE, [e for e in entries if not e.recommended]),
+    ):
         if not heading_entries:
             continue
         lines.append(heading)
         for entry in heading_entries:
-            mark = "x" if entry.ticked else " "
-            lines.append(f"- [{mark}] {entry.label} {_grounds_for(entry, sheet)}")
+            mark = "x" if entry.recommended else " "
+            lines.append(f"- [{mark}] {entry.id} — {entry.label} {_grounds_for(entry)}")
         lines.append("")
 
     while lines and lines[-1] == "":
@@ -79,19 +104,19 @@ def _new_section_lines(sheet: ShotSheet, entries: List[ShotEntry]) -> List[str]:
 
 def _drop_indexes(lines: List[str]) -> set:
     """Indexes to remove: checkboxes, headings directly above them, and any
-    prior shot-sheet block."""
+    prior shot-sheet or shot-plan blocks."""
     remove = set()
 
-    in_sheet_block = False
+    in_block = False
     for i, line in enumerate(lines):
-        if line.strip() == SHOT_SHEET_FENCE:
-            in_sheet_block = True
+        if line.strip() in (SHOT_SHEET_FENCE, SHOT_PLAN_FENCE):
+            in_block = True
             remove.add(i)
             continue
-        if in_sheet_block:
+        if in_block:
             remove.add(i)
             if line.strip() == "```":
-                in_sheet_block = False
+                in_block = False
             continue
         if CHECKBOX_PATTERN.match(line.strip()):
             remove.add(i)
@@ -109,18 +134,31 @@ def _drop_indexes(lines: List[str]) -> set:
 
 def build_enriched_md(original_text: str, sheet: ShotSheet, entries: List[ShotEntry]) -> str:
     """Copy the input MD verbatim, replacing the checkbox section with the
-    shot-sheet block + Coverage/Stretch sections. If no checkbox section
-    exists, the new section is inserted after the last image embed (Q19)."""
+    shot-sheet + shot-plan blocks and the Recommended/Possible sections. If no
+    checkbox section exists, the new section is inserted after the last image
+    embed or fenced block (Q19; the §2.3 layout keeps blocks before checkboxes)."""
     lines = original_text.splitlines()
     remove = _drop_indexes(lines)
     kept = [line for i, line in enumerate(lines) if i not in remove]
 
-    last_image_idx = None
+    insert_at = None
+    in_fence = False
     for i, line in enumerate(kept):
+        stripped = line.strip()
+        if not in_fence and stripped in FENCE_NAMES:
+            in_fence = True
+            continue
+        if in_fence:
+            if stripped == "```":
+                in_fence = False
+                insert_at = i
+            continue
         if MD_IMAGE_PATTERN.search(line):
-            last_image_idx = i
+            insert_at = i
 
-    insert_at = (last_image_idx + 1) if last_image_idx is not None else len(kept)
+    if insert_at is None:
+        insert_at = len(kept) - 1
+    insert_at += 1
     while insert_at < len(kept) and kept[insert_at].strip() == "":
         insert_at += 1
 

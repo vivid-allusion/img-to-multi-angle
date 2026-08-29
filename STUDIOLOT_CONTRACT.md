@@ -64,3 +64,4 @@ The studiolot repo is at:
 <!-- Add entries here when changes are made. Same format as FC's AGENTS.md. -->
 
 - **2026-08-24**: Scene (Dataset A) is now multi-line — all lines before the first image are joined as scene text; Markdown embed/link and URL lines are skipped and logged at INFO.
+- **2026-08-29**: Phase 2 — the fixed angle template directory is gone; `--plan` proposes the shot list from the image itself. Checkbox entries lead with shot ids validated against the file's own shot-plan block. Batch mode and its CLI flags (`--batch-id`, `--list-batches`, `--wait`) are removed. Output MD contract unchanged: prompt, blank line, image embeds.

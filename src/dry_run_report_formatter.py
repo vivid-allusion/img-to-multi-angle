@@ -38,13 +38,10 @@ class DryRunReportFormatter:
     @staticmethod
     def _write_header(f, config: Dict[str, Any]):
         """Write report header."""
-        batch_mode = config['batch_mode']
-        pricing_mode = "**BATCH PRICING (50% discount)**" if batch_mode else "Real-time pricing"
-
         f.write("# 💰 Cost Estimation Report (Dry Run)\n\n")
         f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write("Mode: **DRY RUN** - No API calls made\n")
-        f.write(f"Pricing: {pricing_mode}\n\n")
+        f.write("Pricing: Real-time pricing\n\n")
 
     @staticmethod
     def _write_summary(f, results: Dict[str, Any]):
@@ -63,7 +60,6 @@ class DryRunReportFormatter:
         f.write(f"- Max Tokens: {config['max_tokens']}\n")
         cache_config = config.get('cache_config') if 'cache_config' in config else None
         f.write(f"- Cache Enabled: {cache_config.get('enabled') if cache_config else False}\n")
-        f.write(f"- Batch Mode: {config['batch_mode']}\n")
         f.write(f"- Avg Output Tokens (estimated): {config['avg_output_tokens']}\n")
         f.write("\n")
 

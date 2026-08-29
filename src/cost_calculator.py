@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Local cost estimation for pre-run estimates (--cost-only) and the batch
-path. Real-run reports use the provider-reported `usage.cost` (Q24)."""
+"""Local cost estimation for pre-run estimates (--cost-only). Real-run reports
+use the provider-reported `usage.cost` (Q24)."""
 
 from typing import Dict, Any
 
@@ -41,7 +41,7 @@ def _calculate_cache_costs(usage_data: Dict[str, Any], model_pricing: Dict) -> f
     return cost
 
 
-def calculate_cost(usage_data: Dict[str, Any], config: Dict[str, Any], model: str, batch_mode: bool = False) -> float:
+def calculate_cost(usage_data: Dict[str, Any], config: Dict[str, Any], model: str) -> float:
     """Calculate cost for a single API call based on usage and pricing."""
     if 'pricing' not in config:
         return 0.0
