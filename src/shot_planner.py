@@ -1,58 +1,41 @@
-"""--plan mode: one vision call per input file producing a strict shot sheet
-plus a shot list (phase_2 §2.2). Owns the plan-mode orchestration: preflight,
-staging, atomic promotion (Q16 — the prime directive covers --plan too)."""
+"""Shot planner: one vision call per input file producing dynamic cinematic shots."""
 
 import json
-import sys
-from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Tuple
-
 from openrouter import OpenRouter
 from loguru import logger
 
-from .auth import get_api_key
 from .api_client import process_text
-from .md_input_parser import ParsedMdInput, parse_md_file
+from .md_input_parser import ParsedMdInput
 from .shot_plan import ShotEntry, shot_entries_from_list
 from .shot_sheet import ShotSheet, shot_sheet_from_dict
 from .payload_builder import build_user_content
 
 PLAN_SYSTEM_PROMPT = (
-    "You are a film production assistant. Given the original scene image, produce a factual "
-    "shot sheet describing exactly what is visible: the scene type, the frame size, the "
-    "camera height, every human subject (id, description, position, facing, face visible, "
-    "occlusion), notable props, lighting, and occlusion notes. Invent nothing that is not "
-    "in the image. Reference images labelled as assets may also be provided. Bind a "
-    "subject's 'asset' field to the asset id that best depicts that subject, and only when "
-    "you are confident it is the same person or object; otherwise leave it null. A wrong "
-    "binding is worse than none. Then propose a shot list for this scene: specific shots "
-    "that a reframing tool can crop or pan out of the master, including prop and detail "
-    "inserts (a radio, hands on a wheel, eyes) when they are legible in the master. Give "
-    "every shot a short label, an intent written as concrete prose naming subjects by "
-    "their description (never by id — the id is metadata in subject_ids), and a reason. "
-    "Recommend a shot only when the pixels needed for it are actually present in the "
-    "master. Do not recommend a punch-in on a subject who is occluded, or a tight shot "
-    "(MCU/CU/ECU) on a subject whose face is not visible. A shot you cannot ground is "
-    "still worth listing — mark it not recommended and say why."
+    "You are a master film director and cinematographer. Given an original scene image and "
+    "description, analyze the subjects and propose a comprehensive 5 to 6 shot cinematic "
+    "coverage package for prestige drama (such as Establishing Master Wide, Over-The-Shoulder "
+    "Reverse, Low-Angle Hero, High-Angle Vantage, Dynamic 3/4 Medium, Character Close-Up / Detail Shot).\n\n"
+    "Identify the key human subjects in the scene with an id (S1, S2, ...) and description. "
+    "If reference images labelled as assets are provided, bind each subject's 'asset' field "
+    "to the matching asset id (e.g., A1), or leave it null if unconfident.\n\n"
+    "Then propose 5 to 6 distinct, bold 3D camera angles that cover the scene dynamically:\n"
+    "- Propose real perspective shifts and 3D camera placements (reverse angles, low/high tilts, "
+    "off-axis profiles, unseen viewpoints) rather than flat 2D crops.\n"
+    "- Give every shot an id (SH01, SH02, ...), a clear cinematic label, and an intent written "
+    "as concrete visual prose describing the camera vantage point, framing, depth of field, "
+    "and subject focal point.\n"
+    "- List any bound asset ids in 'grounds' (use [] if master only).\n"
+    "Return the result conforming strictly to the JSON schema."
 )
 
 PLAN_INSTRUCTION = (
-    "Analyse the provided image and return the shot sheet and the shot list for this "
-    "scene as JSON."
+    "Analyse the provided scene and return the subjects and 5 to 6 cinematic camera shots as JSON."
 )
 
 SHOT_SHEET_SCHEMA = {
     "type": "object",
     "properties": {
-        "scene_type": {
-            "type": "string",
-            "enum": ["dialogue_2", "dialogue_3plus", "solo", "crowd_speaker",
-                     "vehicle_interior", "vehicle_exterior", "landscape", "insert"],
-        },
-        "shot_size": {"type": "string", "enum": ["EWS", "WS", "MWS", "MS", "MCU", "CU", "ECU"]},
-        "camera_height": {"type": "string", "enum": ["low", "eye", "high", "overhead"]},
-        "subject_count": {"type": "integer"},
         "subjects": {
             "type": "array",
             "items": {
@@ -60,31 +43,12 @@ SHOT_SHEET_SCHEMA = {
                 "properties": {
                     "id": {"type": "string", "pattern": "^S[0-9]+$"},
                     "description": {"type": "string"},
-                    "position": {"type": "string"},
-                    "facing": {"type": "string"},
-                    "face_visible": {"type": "boolean"},
-                    "occluded": {"type": "boolean"},
                     "asset": {"type": ["string", "null"], "pattern": "^A[0-9]+$"},
                 },
-                "required": ["id", "description", "position", "facing", "face_visible", "occluded"],
+                "required": ["id", "description", "asset"],
                 "additionalProperties": False,
             },
         },
-        "props": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "id": {"type": "string"},
-                    "description": {"type": "string"},
-                    "position": {"type": "string"},
-                },
-                "required": ["id", "description", "position"],
-                "additionalProperties": False,
-            },
-        },
-        "lighting": {"type": "string"},
-        "notes": {"type": "string"},
         "shots": {
             "type": "array",
             "items": {
@@ -101,17 +65,13 @@ SHOT_SHEET_SCHEMA = {
                         "type": "array",
                         "items": {"type": "string", "pattern": "^A[0-9]+$"},
                     },
-                    "recommended": {"type": "boolean"},
-                    "reason": {"type": "string"},
                 },
-                "required": ["id", "label", "intent", "subject_ids",
-                             "grounds", "recommended", "reason"],
+                "required": ["id", "label", "intent", "subject_ids", "grounds"],
                 "additionalProperties": False,
             },
         },
     },
-    "required": ["scene_type", "shot_size", "camera_height", "subject_count",
-                 "subjects", "props", "lighting", "notes", "shots"],
+    "required": ["subjects", "shots"],
     "additionalProperties": False,
 }
 
@@ -124,11 +84,10 @@ RESPONSE_FORMAT = {
 def plan_file(
     parsed: ParsedMdInput, filename: str, client: OpenRouter, config: Dict[str, Any]
 ) -> Tuple[ShotSheet, List[ShotEntry]]:
-    """One vision call → (ShotSheet, shot list). Plan calls are exempt from the
-    token floor (Q4).
+    """One vision call → (ShotSheet, shot list).
 
     With declared assets the plan call receives every asset as a labelled
-    image part (phase_1 §1.2); legacy files pass bare ref URLs as before.
+    image part; raw files pass bare ref URLs.
     """
     if parsed.assets is not None:
         ref_images = parsed.assets
@@ -181,48 +140,5 @@ def plan_file(
     except (KeyError, TypeError, ValueError) as e:
         raise RuntimeError(f"{filename}: plan call returned an invalid shot list: {e}") from e
 
+    logger.info(f"Planned {filename}: {len(sheet.subjects)} subjects, {len(entries)} shots")
     return sheet, entries
-
-
-def run_plan_mode(
-    config: Dict[str, Any], md_files: List[Path], output_dir: Path
-) -> Dict[str, Any]:
-    """Run --plan for all input files with staging + atomic promotion.
-
-    Any failure → zero enriched MDs + FAILURE_REPORT.md + non-zero exit (Q16).
-    """
-    from .preflight import run_preflight
-    from .output_staging import create_staging_dir, promote_staging, fail_run
-    from .reporting import setup_logging
-
-    client = OpenRouter(api_key=get_api_key())
-    run_preflight(config, md_files, client, plan_mode=True)
-
-    staging_dir = create_staging_dir(output_dir)
-    setup_logging(staging_dir)
-
-    start_time = datetime.now()
-
-    try:
-        for md_path in md_files:
-            logger.info(f"Planning: {md_path.name}")
-            parsed = parse_md_file(md_path)
-            sheet, entries = plan_file(parsed, md_path.name, client, config)
-
-            from .plan_output_writer import write_enriched_md
-
-            write_enriched_md(md_path, staging_dir, sheet, entries)
-            logger.success(
-                f"Planned {md_path.name}: {sheet.scene_type}, {sheet.shot_size}, "
-                f"{len(entries)} shots"
-            )
-    except Exception as e:
-        fail_run(staging_dir, output_dir, f"# FAILURE REPORT\n\n- Error: {e}\n")
-        logger.error(f"Plan run aborted — no deliverables written: {e}")
-        sys.exit(1)
-
-    promote_staging(staging_dir, output_dir)
-
-    duration = (datetime.now() - start_time).total_seconds()
-    logger.success(f"Plan complete: {len(md_files)} files in {duration:.1f}s → {output_dir}")
-    return {"processed": len(md_files), "output_dir": output_dir}

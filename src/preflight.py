@@ -28,13 +28,11 @@ class PreflightReport:
     vision_capable: bool
 
 
-def _check_groundings(filename: str, parsed: ParsedMdInput, plan_mode: bool) -> None:
-    """Phase-1 traceability checks for files that declare assets (§1.3 + Q1/Q2).
+def _check_groundings(filename: str, parsed: ParsedMdInput) -> None:
+    """Traceability checks for files that declare assets.
 
-    Q1: once an assets block exists, every ref image must be declared.
-    Q2: every checkbox entry must carry a grounding list; every id in braces
-        must exist in the assets block. Braces-divergence warnings (Q3/Q4)
-        apply to checked shots with a shot sheet.
+    Once an assets block exists, every ref image must be declared.
+    If checkbox entries exist, their grounding list braces must be valid.
     """
     if parsed.assets is None:
         return
@@ -49,81 +47,43 @@ def _check_groundings(filename: str, parsed: ParsedMdInput, plan_mode: bool) -> 
                 "declare every reference image once an assets block exists"
             )
 
-    if plan_mode:
-        return
-
-    for line in parsed.all_checkbox_lines:
-        _, ground_ids, _ = _parse_checkbox_line(line)
-        if ground_ids is None:
-            raise PreflightError(
-                f"{filename}: checkbox entry has no grounding list — append braces "
-                f"(use {{}} for master-only): '{line.strip()}'"
-            )
-        unknown = [g for g in ground_ids if g not in declared_ids]
-        if unknown:
-            raise PreflightError(
-                f"{filename}: label '{line.strip()}' grounds on unknown asset id(s) "
-                f"{unknown} — declared: {sorted(declared_ids)}"
-            )
-
-    if parsed.shot_sheet is None:
-        return
-
-    assets_by_subject = {s.id: s.asset for s in parsed.shot_sheet.subjects}
-    entries_by_id = {e.id: e for e in parsed.shot_entries or []}
-    for shot_id, ground_ids in parsed.checked_shot_bindings:
-        entry = entries_by_id.get(shot_id)
-        if entry is None:
-            continue
-        bound = {
-            assets_by_subject[sid]
-            for sid in entry.subject_ids
-            if assets_by_subject.get(sid)
-        }
-        braces = set(ground_ids or [])
-        if bound - braces:
-            logger.warning(
-                f"{filename}: '{shot_id}' — bound subject asset(s) "
-                f"{sorted(bound - braces)} not in grounds; master-only grounding "
-                "accepted as a deliberate override"
-            )
-        if braces - bound:
-            logger.warning(
-                f"{filename}: '{shot_id}' — grounds {sorted(braces - bound)} "
-                "not bound to any subject in the shot plan; braces remain "
-                "authoritative"
-            )
+    if parsed.all_checkbox_lines:
+        for line in parsed.all_checkbox_lines:
+            _, ground_ids, _ = _parse_checkbox_line(line)
+            if ground_ids is None:
+                raise PreflightError(
+                    f"{filename}: checkbox entry has no grounding list — append braces "
+                    f"(use {{}} for master-only): '{line.strip()}'"
+                )
+            unknown = [g for g in ground_ids if g not in declared_ids]
+            if unknown:
+                raise PreflightError(
+                    f"{filename}: label '{line.strip()}' grounds on unknown asset id(s) "
+                    f"{unknown} — declared: {sorted(declared_ids)}"
+                )
 
 
 def run_preflight(
     config: Dict[str, Any],
     md_files: List[Path],
     client: OpenRouter,
-    plan_mode: bool = False,
 ) -> PreflightReport:
-    """    Run all preflight checks in order. Raises on the first failure.
+    """Run all preflight checks in order. Raises on the first failure.
 
-    plan_mode: checkbox validation is skipped (Q19 — --plan accepts files
-    without a checkbox section); URL/vision/config checks still run. The
-    Q2/brace grammar checks are rewrite-mode only; the Q1 declaration check
-    and asset URL checks run in both modes.
+    Raw files (without a shot-plan block) pass preflight for automatic
+    single-pass generation. Pre-checked files have checkboxes validated.
+    URL reachability, asset declarations, and vision capability are checked upfront.
     """
     parsed_files = []
     for md_path in md_files:
         parsed = parse_md_file(md_path)
-        if not plan_mode:
-            if parsed.shot_entries is None:
-                raise PreflightError(
-                    f"{md_path.name}: no shot-plan block — run --plan on this "
-                    "file first to generate the shot list (Q7: legacy template "
-                    "files must be re-planned)"
-                )
+        if parsed.shot_entries is not None and parsed.all_checkbox_lines:
             validate_checkboxes(
                 parsed.all_checkbox_lines,
                 {e.id for e in parsed.shot_entries},
                 md_path.name,
             )
-        _check_groundings(md_path.name, parsed, plan_mode)
+        _check_groundings(md_path.name, parsed)
         parsed_files.append((md_path.name, parsed))
 
     url_cache: Dict[str, bool] = {}

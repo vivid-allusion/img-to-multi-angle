@@ -1,16 +1,13 @@
 """Shot-sheet model: dataclasses, YAML-block extraction, and dict conversion.
 
-The shot sheet is produced by --plan's vision call (shot_planner) and consumed
-by the rewrite pipeline (md_input_parser → orchestrator). Schema per plan §3.3
-+ Q13 (`occluded`). The shot list lives in shot_plan.py (phase_2 §2.2).
+The shot sheet holds scene subject definitions and asset bindings.
 """
 
 import re
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, List, Optional, Tuple
 
 from loguru import logger
-
 import yaml
 
 SHOT_SHEET_FENCE = "```yaml shot-sheet"
@@ -18,48 +15,47 @@ SHOT_SHEET_FENCE = "```yaml shot-sheet"
 
 @dataclass
 class ShotSubject:
-    """One subject in a shot sheet roster.
+    """One subject in a scene roster.
 
-    `asset` is the planner's binding to a declared asset (phase_1 §1.2), or
-    None when no asset clearly depicts the subject.
+    `asset` is the binding to a declared asset (A1, A2, ...), or None.
     """
 
     id: str
     description: str
-    position: str
-    facing: str
-    face_visible: bool
-    occluded: bool
     asset: Optional[str] = None
+    position: str = ""
+    facing: str = ""
+    face_visible: bool = True
+    occluded: bool = False
 
 
 @dataclass
 class ShotProp:
-    """One notable prop in a shot sheet."""
+    """Notable prop in a scene."""
 
     id: str
     description: str
-    position: str
+    position: str = ""
 
 
 @dataclass
 class ShotSheet:
-    """Parsed shot-sheet block (§3.3 schema + Q13 `occluded`)."""
+    """Scene subject roster and metadata."""
 
-    scene_type: str
-    shot_size: str
-    camera_height: str
-    subject_count: int
     subjects: List[ShotSubject]
-    props: List[ShotProp]
-    lighting: str
-    notes: str
+    scene_type: str = ""
+    shot_size: str = ""
+    camera_height: str = ""
+    subject_count: int = 0
+    props: List[ShotProp] = field(default_factory=list)
+    lighting: str = ""
+    notes: str = ""
 
 
 def extract_shot_sheet(content: str, filename: str) -> Tuple[Optional[ShotSheet], Optional[str]]:
     """Extract the ```yaml shot-sheet fenced block, if present.
 
-    Absent block → (None, None). Present but malformed → ValueError (Q22: hard-fail).
+    Absent block → (None, None). Present but malformed → ValueError (fail fast).
     """
     lines = content.splitlines()
     fence_idx = None
@@ -91,14 +87,14 @@ def extract_shot_sheet(content: str, filename: str) -> Tuple[Optional[ShotSheet]
     except (KeyError, TypeError, ValueError) as e:
         raise ValueError(f"{filename}: invalid shot-sheet block: {e}") from e
 
-    logger.info(f"{filename}: shot-sheet block parsed (scene_type={sheet.scene_type})")
+    logger.info(f"{filename}: shot-sheet block parsed ({len(sheet.subjects)} subjects)")
     return sheet, block_text
 
 
 def shot_sheet_from_dict(data: dict) -> ShotSheet:
-    """Build a ShotSheet from a parsed YAML mapping (schema per §3.3 + Q13)."""
+    """Build a ShotSheet from a parsed YAML mapping."""
     subjects = []
-    for s in data["subjects"]:
+    for s in data.get("subjects", []):
         asset = s.get("asset")
         if asset is not None and not re.match(r"^A\d+$", str(asset)):
             raise ValueError(f"subject {s['id']}: asset '{asset}' must match ^A\\d+$")
@@ -106,23 +102,27 @@ def shot_sheet_from_dict(data: dict) -> ShotSheet:
             ShotSubject(
                 id=str(s["id"]),
                 description=str(s["description"]),
-                position=str(s["position"]),
-                facing=str(s["facing"]),
-                face_visible=bool(s["face_visible"]),
-                occluded=bool(s.get("occluded", False)),
                 asset=str(asset) if asset is not None else None,
+                position=str(s.get("position", "")),
+                facing=str(s.get("facing", "")),
+                face_visible=bool(s.get("face_visible", True)),
+                occluded=bool(s.get("occluded", False)),
             )
         )
     props = [
-        ShotProp(id=str(p["id"]), description=str(p["description"]), position=str(p["position"]))
+        ShotProp(
+            id=str(p["id"]),
+            description=str(p["description"]),
+            position=str(p.get("position", "")),
+        )
         for p in data.get("props", [])
     ]
     return ShotSheet(
-        scene_type=str(data["scene_type"]),
-        shot_size=str(data["shot_size"]),
-        camera_height=str(data["camera_height"]),
-        subject_count=int(data.get("subject_count", len(subjects))),
         subjects=subjects,
+        scene_type=str(data.get("scene_type", "")),
+        shot_size=str(data.get("shot_size", "")),
+        camera_height=str(data.get("camera_height", "")),
+        subject_count=int(data.get("subject_count", len(subjects))),
         props=props,
         lighting=str(data.get("lighting", "")),
         notes=str(data.get("notes", "")),

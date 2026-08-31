@@ -1,3 +1,36 @@
+## Last Session Summary (2026-08-31) — Direct Multi-Angle Cinematic Reframing (Single-Pass)
+
+### Feature Implementation — ✅ COMPLETE (verified live)
+
+The tool was refactored into a streamlined single-command workflow (`python -m src.main`) that takes raw Markdown scene files and directly generates dynamic, cinematic multi-angle reframing prompts in one automated pass. Q1–Q4 answered (all Option 1) in `USER-FILES/07.TEMP/questions.md`.
+
+### Core Architecture & Workflow
+- **Single-Command Execution**: `python -m src.main` processes input files directly. For raw Markdown files (scene + images), it automatically executes a 2-step pipeline in one run: 1 vision analysis call to determine 5–6 bold cinematic shots + individual prompt generation calls per shot.
+- **Backward Compatibility**: If an input file contains pre-existing checked shots in a `shot-plan` block, the orchestrator respects and executes only the selected shots.
+- **Removed `--plan`**: Eliminated mandatory planning, manual checkbox editing, and the `--plan` CLI flag in favor of a single unified pipeline.
+
+### Modules Modified (8) & Deleted (1)
+- `src/system_prompt.md` — Removed the rigid boilerplate preservation clause; added natural consistency rules encouraging bold 3D perspective shifts and unseen camera vantage points; replaced niche few-shots with 3 prestige TV drama scenarios (kitchen dialogue, night car scene, interrogation room); word count target 60–90 words.
+- `src/user_message.md` — Streamlined for clean semantic instructions focusing on shot label, intent, and scene context.
+- `src/shot_planner.py` (144 lines) — `SHOT_SHEET_SCHEMA` stripped of spatial metadata clutter (coordinates, facing vectors, occlusion booleans, reasonings) down to a lean schema (`subjects` + `shots`); `PLAN_SYSTEM_PROMPT` overhauled to mandate bold prestige drama coverage.
+- `src/shot_sheet.py` (129 lines) & `src/shot_plan.py` (136 lines) — Simplified dataclasses and fence parsers with clean defaults.
+- `src/preflight.py` (165 lines) — Relaxed requirement for a pre-existing `shot-plan` fence so raw files pass preflight; URL reachability, asset declaration, and model vision capability checks preserved.
+- `src/multi_angle_orchestrator.py` (241 lines) — Integrated automated two-step flow (dynamic shot planning + immediate per-shot prompt generation) with atomic output staging (`.staging` -> promote / `_FAILED`).
+- `src/dry_run_estimator.py` (101 lines) — Updated `--cost-only` to estimate 1 planning call + 5–6 shot generation calls for raw input files.
+- `src/main.py` (172 lines) — Removed `--plan` argument and simplified CLI routing.
+- **Deleted `src/plan_output_writer.py`** (181 lines removed).
+
+### Verification — ALL PASSED live
+- **Live `--selftest`**: Vision verification passed against `google/gemini-3.7-flash` (red, green, blue canary orientation verified).
+- **Live Single-Pass Run**: Raw markdown scene (winter smuggling operation) processed end-to-end in one command:
+  - Dynamically planned 6 bold cinematic shots: Wide Establishing Profile, Low Angle Overseer Hero, Over-The-Shoulder Vantage, Dynamic 3/4 Worker Medium, Reverse Ground-Level Draft Team, Detail Insert Crate & Lantern.
+  - Generated 6 high-quality reframing prompts (66–77 words), free of rigid boilerplate, fully formatted with master image embeds.
+  - Staged and atomically promoted to `USER-FILES/05.OUTPUT/260831_183137_gemini-3.7-flash_RT_temp0.2_MULTI-ANGLE-MD/`.
+- **Offline Battery**: Raw parsing, asset parsing, lean schema conversion, and preflight checks verified.
+- **Codebase Health**: All 31 files in `src/` are under the 250-line soft limit (3,369 total lines); 0 `print()`, 0 TODO/FIXME in `src/`.
+
+---
+
 ## Last Session Summary (2026-08-29) — Phase 2: Retire the angle templates; the planner proposes the shots
 
 ### Feature Implementation — ✅ COMPLETE (verified live)
@@ -707,52 +740,41 @@ python3 -m src.main --cost-only        # OK ($0.0131 for 1 file x 17 angles)
 Multi-Angle MD Processor — transforms Markdown files into multi-angle reframed outputs using OpenRouter API.
 
 ## Architecture
-- **31 Python files** in `src/`, **3,804 total lines**
+- **31 Python files** in `src/`, **3,369 total lines** (all ≤ 241 lines)
 - Entry point: `python -m src.main`
 - Config: `USER-FILES/01.CONFIG/openrouter_config.yaml` + `USER-FILES/03.PROFILES/*.yaml`
-- Input: `USER-FILES/04.INPUT/*.md` (must include checkbox section)
+- Input: `USER-FILES/04.INPUT/*.md` (raw Markdown with scene + image embeds, or pre-checked Markdown)
 - Output: `USER-FILES/05.OUTPUT/{timestamp}_{model}_{mode}_MULTI-ANGLE-MD/`
 
 ## Key Modules
 - `main.py` — CLI entry point, argument parsing
-- `config.py` — Config loading, `require_batch_config()` utility
-- `config_validator.py` — Split into `YamlValidator`, `FieldValidator`, `ConflictChecker` + thin `ConfigurationValidator` orchestrator
+- `config.py` — Config loading and validation
+- `config_validator.py` — Configuration validator
 - `profile_manager.py` — Profile loading/application
-- `cli_handler.py` — Thin router delegating to `ProfileCommand`, `BatchCommand`, `CostCommand`, `ProcessCommand`
-- `multi_angle_orchestrator.py` — Main processing workflow, angles/templates cached as instance attributes
-- `api_client.py` — OpenRouter API wrapper with extracted helpers (`_build_system_message`, `_build_api_payload`, `_extract_usage_data`)
-- `batch_processor.py` / `batch_monitor.py` / `batch_result_parser.py` — Batch operations
+- `cli_handler.py` — Thin router delegating to `ProfileCommand`, `CostCommand`, `ProcessCommand`
+- `multi_angle_orchestrator.py` — Single-pass orchestration (auto-planning + prompt generation) with atomic staging
+- `shot_planner.py` — Vision-based dynamic shot planning (lean JSON schema)
+- `shot_plan.py` / `shot_sheet.py` — Shot and scene data models
+- `assets.py` — Typed reference assets parser and models
+- `api_client.py` — OpenRouter API wrapper with token floor and usage extraction
+- `payload_builder.py` — Multi-part image/text user payload builder
+- `preflight.py` — Preflight image reachability and vision capability checks
 - `cost_calculator.py` — Token cost calculation
 
-## Refactoring Completed (2026-05-23)
-- **34 tasks completed**, 41 effort points
-- Deleted 2 dead modules: `response_validator.py`, `cost_reporter.py`
-- Removed 21 unused constants from `constants.py`
-- Removed 3 unused dataclasses from `data_models.py`
-- Split `ConfigurationValidator` into 4 focused classes
-- Split `CLIHandler` into 4 command handlers + thin router
-- Reduced `process_text()` complexity from 14 to ~4
-- Reduced `_process_single_file()` from 7 to 3 parameters
-- Created shared `require_batch_config()` utility
-- All stale docstrings updated, version bumped to 5.0.0
-
-## Codebase Health (as of 2026-08-24)
+## Codebase Health (as of 2026-08-31)
 - 0 syntax errors
 - 0 unused imports
-- 0 functions with cyclomatic complexity >10
-- 1 file over 250-line soft limit: `cli_handler.py` (263 lines)
+- 0 files over 250-line soft limit (longest is 241 lines)
 - 0 files over 400-line hard limit
 - 0 TODO/FIXME comments
 - 0 logger.debug() statements
 - 0 print() statements in src/
-- 31 files in `src/`, 3,804 total lines
-
-## Future Considerations
-- 8 functions have exactly 5 parameters (borderline acceptable, not blocking)
+- 31 files in `src/`, 3,369 total lines
 
 ## Testing
 ```bash
-venv/bin/python -m src.main --list-profiles   # Works
-venv/bin/python -m src.main --dry-run          # Works (does NOT parse MD files)
-venv/bin/python -m src.main --cost-only        # Works (dummy API key for token counting)
+venv/bin/python -m src.main --list-profiles   # Lists profiles
+venv/bin/python -m src.main --cost-only        # Token & cost estimation
+venv/bin/python -m src.main --selftest         # Vision canary test
+venv/bin/python -m src.main                    # Direct single-pass execution
 ```

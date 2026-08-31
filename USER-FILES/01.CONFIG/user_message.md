@@ -6,12 +6,14 @@ Label: [Shot label]
 
 Intent: [Shot intent]
 
-Look at the original image and the scene description. Based on both, rewrite the shot's label and intent into a specific image-to-image reframing prompt.
+Study the original image and scene description. Rewrite the shot's label and intent into a specific cinematic image-to-image reframing prompt.
 
 The rewritten prompt must:
 - Start with "Reframe the provided image of [brief scene summary]"
-- Apply the shot's intent to the specific subjects and composition in the original image
-- Preserve all character details, objects, and environment from the scene description
-- Be a single, standalone prompt ready for an image-to-image model
+- Establish the new camera angle, vantage point, framing, and depth of field
+- Maintain character identity, wardrobe, props, lighting atmosphere, and environment
+- Allow realistic 3D perspective shifts and unseen angles
+- Target 60 to 90 words
+- Be a single, standalone prompt ready for an image-to-image diffusion model
 
-Return only the rewritten prompt. No explanations. No alternatives.
+Return only the rewritten prompt. No explanations, markdown styling, or commentary.

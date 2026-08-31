@@ -1,17 +1,15 @@
-"""Shot-plan model: the planner's shot list (phase_2 §2.2, full record per Q8).
+"""Shot-plan model: the planner's shot list.
 
-Each entry's `intent` is concrete prose — subject ids never appear in it (Q9);
-`subject_ids` is metadata for validation and the Phase-1 WARN checks. `grounds`
-holds the asset ids that ground the shot ([] = master only, the master itself
-is implicit and never listed).
+Each entry's `intent` is concrete prose describing the camera vantage point,
+framing, depth of field, and focal emphasis. `grounds` holds the asset ids that
+ground the shot ([] = master only).
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Set
 
 from loguru import logger
-
 import yaml
 
 SHOT_PLAN_FENCE = "```yaml shot-plan"
@@ -26,10 +24,10 @@ class ShotEntry:
     id: str
     label: str
     intent: str
-    subject_ids: List[str]
-    grounds: List[str]
-    recommended: bool
-    reason: str
+    subject_ids: List[str] = field(default_factory=list)
+    grounds: List[str] = field(default_factory=list)
+    recommended: bool = True
+    reason: str = ""
 
 
 def shot_entries_from_list(
@@ -38,11 +36,11 @@ def shot_entries_from_list(
     roster: Optional[Set[str]] = None,
     declared_assets: Optional[Set[str]] = None,
 ) -> List[ShotEntry]:
-    """Build ShotEntry list from a parsed YAML list (schema per §2.2 + Q8).
+    """Build ShotEntry list from a parsed YAML list.
 
     Structural checks (id pattern, duplicates) always run. When `roster` is
     given, subject ids must resolve; when `declared_assets` is given, grounds
-    ids must resolve (an undeclared ground aborts — plan §0.4 traceability).
+    ids must resolve (an undeclared ground aborts).
     """
     entries: List[ShotEntry] = []
     seen: Set[str] = set()
@@ -86,7 +84,7 @@ def shot_entries_from_list(
                 intent=intent,
                 subject_ids=subject_ids,
                 grounds=grounds,
-                recommended=bool(item["recommended"]),
+                recommended=bool(item.get("recommended", True)),
                 reason=str(item.get("reason", "")),
             )
         )
@@ -102,9 +100,7 @@ def extract_shot_plan(
 ) -> Optional[List[ShotEntry]]:
     """Extract the ```yaml shot-plan fenced block, if present.
 
-    Absent block → None. Present but malformed → ValueError (fail fast, Q22
-    pattern). Cross-checks (roster/declared assets) run when the sets are
-    supplied.
+    Absent block → None. Present but malformed → ValueError (fail fast).
     """
     lines = content.splitlines()
     fence_idx = None

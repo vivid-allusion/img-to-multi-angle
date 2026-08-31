@@ -14,30 +14,24 @@ from .exceptions import ConfigurationError, FileProcessingError
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Process MD files with AI for multi-angle reframing",
+        description="Direct multi-angle cinematic reframing from Markdown scene inputs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--profile",
         type=str,
-        help="Profile filename to use (e.g., haiku_4.5_0.3_REAL-TIME.yaml)",
+        help="Profile filename to use (e.g., gemini-3.7-flash_temp0.2_REAL-TIME.yaml)",
     )
     parser.add_argument("--dry-run", action="store_true", help="Run without making API calls")
     parser.add_argument(
         "--selftest",
         action="store_true",
-        help="Send a test image to the API and verify left/right vision, then exit",
+        help="Send a test image to the API and verify vision orientation, then exit",
     )
     parser.add_argument(
         "--cost-only",
         action="store_true",
-        help="Estimate costs only using token counting API",
-    )
-    parser.add_argument(
-        "--plan",
-        action="store_true",
-        help="Generate adaptive shot sheets + checkbox lists (one vision call per file) "
-        "into a SHOT-PLAN output directory; never writes into 04.INPUT",
+        help="Estimate costs only using token counting",
     )
     parser.add_argument(
         "--list-profiles", action="store_true", help="List available profiles and exit"
@@ -53,17 +47,7 @@ def parse_arguments():
 
 
 def validate_profile_selection(args):
-    """Validate profile selection and determine which profile to use.
-
-    Args:
-        args: Parsed command line arguments
-
-    Returns:
-        Profile filename to use, or None for auto-detection
-
-    Raises:
-        SystemExit: If profile selection is invalid
-    """
+    """Validate profile selection and determine which profile to use."""
     profiles_dir = Path("USER-FILES/03.PROFILES")
 
     if not profiles_dir.exists():
@@ -101,14 +85,7 @@ def validate_profile_selection(args):
 
 
 def load_configuration(args):
-    """Load and validate configuration.
-
-    Args:
-        args: Parsed command line arguments
-
-    Returns:
-        Loaded configuration dictionary
-    """
+    """Load and validate configuration."""
     try:
         profile_name = validate_profile_selection(args)
         config = load_strict_config(profile_name)
@@ -127,14 +104,7 @@ def load_configuration(args):
 
 
 def discover_mds(args):
-    """Discover MD files based on arguments.
-
-    Args:
-        args: Parsed command line arguments
-
-    Returns:
-        Tuple of (list of MD file paths, input directory path)
-    """
+    """Discover MD files based on arguments."""
     if args.input_dir:
         input_path = Path(args.input_dir)
         if not input_path.exists():
@@ -189,15 +159,7 @@ def main():
         logger.warning(f"No MD files found in {args.input_dir or 'USER-FILES/04.INPUT/'}")
         return
 
-    if args.plan:
-        output_dir = get_output_directory(config, suffix="SHOT-PLAN")
-        from .shot_planner import run_plan_mode
-
-        run_plan_mode(config, md_files, output_dir)
-        return
-
     output_dir = get_output_directory(config, suffix="MULTI-ANGLE-MD")
-
     handler = CLIHandler(config)
 
     if args.cost_only:

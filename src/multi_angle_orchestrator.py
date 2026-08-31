@@ -3,7 +3,7 @@
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 from openrouter import OpenRouter
 from loguru import logger
 
@@ -15,18 +15,13 @@ from .api_client import process_text, build_system_prompt
 from .multi_angle_output_saver import save_angle_outputs
 from .data_models import ProcessingResult, UsageData
 from .exceptions import FileProcessingError
+from .shot_plan import ShotEntry
 
 
 class MultiAngleOrchestrator(BaseOrchestrator):
     """Orchestrates MD file multi-angle processing workflow."""
 
     def __init__(self, config: Dict[str, Any], input_dir: Path):
-        """Initialize orchestrator.
-
-        Args:
-            config: Configuration dictionary
-            input_dir: Input directory path
-        """
         super().__init__(config)
         self.input_dir = input_dir
         self.user_message_path = Path("USER-FILES/01.CONFIG/user_message.md")
@@ -35,16 +30,7 @@ class MultiAngleOrchestrator(BaseOrchestrator):
     def process_batch(
         self, files: List[Path], client: OpenRouter, output_dir: Path
     ) -> Dict[str, Any]:
-        """Process all MD files sequentially, generating multi-angle outputs.
-
-        Args:
-            files: List of MD file paths
-            client: OpenRouter API client
-            output_dir: Output directory
-
-        Returns:
-            Processing statistics
-        """
+        """Process all MD files sequentially, generating multi-angle outputs."""
         stats = {
             "processed": 0,
             "failed": 0,
@@ -59,7 +45,6 @@ class MultiAngleOrchestrator(BaseOrchestrator):
 
         for md_path in files:
             result = self._process_single_file(md_path, client, output_dir)
-
             stats["processed"] += 1
             stats["total_cost"] += result.cost
             stats["results"].append(result)
@@ -72,22 +57,12 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         client: OpenRouter,
         output_dir: Path,
     ) -> ProcessingResult:
-        """Process one MD file across all checked shots.
-
-        Args:
-            md_path: Path to MD file
-            client: OpenRouter API client
-            output_dir: Output directory (staging during real runs)
-
-        Raises:
-            FileProcessingError: If any shot call fails — the run must abort
-        """
+        """Process one MD file across all selected or auto-planned shots."""
         input_name = md_path.stem
-
         parsed = parse_md_file(md_path)
 
-        if not parsed.checked_shots:
-            logger.warning(f"Skipping {md_path.name}: no shots selected")
+        if parsed.all_checkbox_lines and not parsed.checked_shots:
+            logger.warning(f"Skipping {md_path.name}: checkboxes present but none checked")
             from .multi_angle_output_saver import copy_raw_md_file
             copy_raw_md_file(md_path, output_dir)
             return ProcessingResult(
@@ -98,41 +73,48 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                 cost=0.0,
             )
 
-        logger.info(f"Processing: {md_path.name} ({len(parsed.checked_shots)} of {len(parsed.shot_entries or [])} shots)")
+        total_usage: Dict[str, Any] = {}
+
+        if parsed.checked_shots:
+            entries_by_id = {e.id: e for e in parsed.shot_entries or []}
+            shots_to_run: List[Tuple[ShotEntry, List[str]]] = []
+            for shot_id, ground_ids in parsed.checked_shot_bindings:
+                entry = entries_by_id.get(shot_id)
+                if entry is None:
+                    raise FileProcessingError(
+                        f"{md_path.name}: ticked shot '{shot_id}' not found in shot-plan block"
+                    )
+                shots_to_run.append((entry, ground_ids or []))
+            logger.info(f"Processing {md_path.name}: {len(shots_to_run)} pre-selected shots")
+        else:
+            logger.info(f"Auto-planning shots for raw input: {md_path.name}")
+            from .shot_planner import plan_file
+            sheet, entries = plan_file(parsed, md_path.name, client, self.config)
+            shots_to_run = [(e, e.grounds) for e in entries]
+            logger.info(f"Processing {md_path.name}: {len(shots_to_run)} auto-planned shots")
 
         cache_config = self.config.get("cache_config", {})
-        use_cache = cache_config.get("enabled", False) and len(parsed.checked_shots) >= 2
+        use_cache = cache_config.get("enabled", False) and len(shots_to_run) >= 2
         cache_ttl = cache_config.get("cache_ttl") if use_cache else None
         if use_cache:
             logger.info(f"Prompt caching active for {md_path.name} (TTL: {cache_ttl})")
 
         system_prompt = build_system_prompt(self.config)
-
-        if parsed.assets is not None:
-            assets_by_id = {a.id: a for a in parsed.assets}
-        else:
-            assets_by_id = {}
-
-        entries_by_id = {e.id: e for e in parsed.shot_entries or []}
+        assets_by_id = {a.id: a for a in parsed.assets} if parsed.assets is not None else {}
 
         angle_results = {}
         grounds_by_angle: Dict[str, List[str]] = {}
         labels_by_shot: Dict[str, str] = {}
-        total_usage: Dict[str, Any] = {}
-        for shot_id, ground_ids in parsed.checked_shot_bindings:
-            entry = entries_by_id.get(shot_id)
-            if entry is None:
-                raise FileProcessingError(
-                    f"{md_path.name}: ticked shot '{shot_id}' not found in the "
-                    "shot-plan block"
-                )
+
+        for entry, ground_ids in shots_to_run:
+            shot_id = entry.id
             user_msg = render_user_message(self.um_template, entry.label, entry.intent)
 
             if parsed.assets is None:
                 shot_refs = parsed.ref_images
                 ground_urls = list(parsed.ref_images)
             else:
-                shot_refs = [assets_by_id[gid] for gid in (ground_ids or [])]
+                shot_refs = [assets_by_id[gid] for gid in ground_ids if gid in assets_by_id]
                 ground_urls = [a.url for a in shot_refs]
 
             try:
@@ -141,7 +123,6 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                     original_image=parsed.original_image,
                     ref_images=shot_refs,
                     angle_text=user_msg,
-                    shot_sheet=parsed.shot_sheet_text,
                     cache_breakpoint=use_cache,
                     cache_ttl=cache_ttl,
                 )
@@ -194,14 +175,7 @@ class MultiAngleOrchestrator(BaseOrchestrator):
     def generate_processing_reports(
         self, output_dir: Path, stats: Dict[str, Any], metadata: Dict[str, Any], duration: float
     ) -> None:
-        """Generate processing reports.
-
-        Args:
-            output_dir: Output directory
-            stats: Processing statistics
-            metadata: Processing metadata
-            duration: Processing duration in seconds
-        """
+        """Generate processing reports."""
         from .reporting import generate_summary
 
         generate_summary(
@@ -220,14 +194,8 @@ def process_all_md_files(
     input_dir: Path,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
-    """Process all MD files using orchestrator.
-
-    Real runs: preflight first, then stage, then promote atomically. On any
-    failure the staging dir is renamed to _FAILED and the run exits non-zero —
-    the final output directory is never created.
-    """
+    """Process all MD files using orchestrator with preflight and atomic staging."""
     orchestrator = MultiAngleOrchestrator(config, input_dir)
-
     start_time = datetime.now()
 
     if dry_run:
@@ -270,5 +238,4 @@ def process_all_md_files(
     metadata["end_time"] = end_time
 
     orchestrator.generate_processing_reports(output_dir, stats, metadata, duration)
-
     return stats
