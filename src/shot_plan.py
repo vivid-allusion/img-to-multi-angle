@@ -132,5 +132,4 @@ def extract_shot_plan(
     except (KeyError, TypeError, ValueError) as e:
         raise ValueError(f"{filename}: invalid shot-plan block: {e}") from e
 
-    logger.info(f"{filename}: shot-plan block parsed ({len(entries)} shots)")
     return entries

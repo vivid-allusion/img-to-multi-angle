@@ -32,13 +32,9 @@ def load_profile(profiles_dir: Path, profile_name: Optional[str] = None) -> Opti
     profile_path = profiles_dir / profile_name
 
     if profile_path.exists():
-        logger.info(f"Loading profile: {profile_path.name}")
         with open(profile_path) as f:
             profile = yaml.safe_load(f)
             if profile and profile.get("enabled", True):
-                if "metadata" in profile:
-                    meta = profile["metadata"]
-                    logger.info(f"Profile: {meta.get('name', 'Unknown')} v{meta.get('version', '1.0')}")
                 return profile
             else:
                 logger.warning(f"Profile {profile_path.name} is disabled")
@@ -116,8 +112,6 @@ def _apply_model_config(config: Dict[str, Any], profile: Dict[str, Any]) -> None
         config["model"] = endpoint
         config["model_nickname"] = nickname
         config["model_capabilities"] = capabilities
-
-        logger.info(f"Using model from profile: {nickname} → {endpoint}")
     else:
         logger.error(f"Invalid model config in profile: {model_config}")
         raise ValueError("Model config must be a dictionary with 'endpoint' field")
@@ -141,7 +135,6 @@ def _apply_pricing(config: Dict[str, Any], profile: Dict[str, Any]) -> None:
 
     if "real_time" in pricing:
         config["pricing"] = pricing["real_time"]
-        logger.info("Using real-time pricing from profile")
     else:
         logger.warning("Pricing config incomplete in profile")
 
@@ -206,8 +199,6 @@ def apply_profile_to_config(config: Dict[str, Any], profile: Dict[str, Any]) -> 
 
     if "fields_to_remove" in profile:
         config["fields_to_remove"] = profile["fields_to_remove"]
-        logger.info(f"Fields to remove from profile: {config['fields_to_remove']}")
 
     if "metadata" in profile:
         config["profile_metadata"] = profile["metadata"]
-        logger.info(f"Loaded profile: {profile['metadata'].get('profile_name', 'Unknown')}")

@@ -8,25 +8,41 @@ from typing import Dict, Any
 from loguru import logger
 
 
-def setup_logging(output_dir: Path) -> None:
-    """Set up logging configuration for processing run.
-    
-    Args:
-        output_dir: Directory to save log files
-    """
+def setup_cli_logging() -> None:
+    """Set up clean console logging format."""
     logger.remove()
-    
     logger.add(
         sys.stderr,
         format="<green>{time:HH:mm:ss}</green> | <level>{message}</level>",
-        level="INFO"
+        level="INFO",
     )
-    
+
+
+def setup_logging(output_dir: Path) -> None:
+    """Set up logging configuration for processing run."""
+    setup_cli_logging()
     logger.add(
         output_dir / "processing_log.txt",
         format="{time:HH:mm:ss} | {level} | {message}",
-        level="INFO"
+        level="INFO",
     )
+
+
+def short_name(name: Any, max_len: int = 40) -> str:
+    """Shorten long filenames for clean display."""
+    s = Path(name).name if isinstance(name, Path) else str(name)
+    if len(s) <= max_len:
+        return s
+    head = max_len // 2 - 2
+    tail = max_len - head - 3
+    return f"{s[:head]}...{s[-tail:]}"
+
+
+def short_url(url: str, max_len: int = 50) -> str:
+    """Shorten long URLs for clean display."""
+    if len(url) <= max_len:
+        return url
+    return f"{url[:25]}...{url[-20:]}"
 
 
 def generate_summary(output_dir: Path, stats: Dict[str, Any],

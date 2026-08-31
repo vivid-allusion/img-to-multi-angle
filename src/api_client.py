@@ -96,28 +96,16 @@ def process_text(
     api_payload = _build_api_payload(user_content, config, system_message, response_format)
 
     try:
-        logger.info(f"Calling API with model: {api_payload['model']}")
-        if "temperature" in api_payload:
-            logger.info(f"Temperature: {api_payload['temperature']}")
-        if "max_tokens" in api_payload:
-            logger.info(f"Max tokens: {api_payload['max_tokens']}")
-
-        logger.info(f"System prompt: {len(system)} chars, User message parts: {len(user_content)}")
-
         response = client.chat.send(**api_payload)
 
         response_text = extract_response_text(response)
         usage_data = _extract_usage_data(response)
 
-        logger.info(f"Processed ({len(user_content)} parts) -> ({len(response_text)} chars)")
-
         if not response_text.strip():
             raise RuntimeError("API returned empty response text — aborting run")
 
         prompt_tokens = usage_data.get("input_tokens", 0)
-        if skip_token_floor:
-            logger.info(f"prompt_tokens ({prompt_tokens}) — floor check exempt (plan/selftest call)")
-        else:
+        if not skip_token_floor:
             floor = config.get("min_prompt_tokens")
             if floor is None:
                 logger.warning(

@@ -15,14 +15,13 @@ def create_staging_dir(final_output_dir: Path) -> Path:
     parent.mkdir(parents=True, exist_ok=True)
     staging = parent / f".{final_output_dir.name}.staging"
     staging.mkdir()
-    logger.info(f"Created staging directory: {staging}")
     return staging
 
 
 def promote_staging(staging: Path, final_output_dir: Path) -> None:
     """Atomically rename staging to the final output directory."""
     os.replace(staging, final_output_dir)
-    logger.info(f"Promoted staging to: {final_output_dir}")
+    logger.success(f"Output promoted to: {final_output_dir}")
 
 
 def fail_run(staging: Path, final_output_dir: Path, report: str) -> None:

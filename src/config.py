@@ -19,7 +19,6 @@ def _load_base_config(validator: ConfigurationValidator, base_path: Path) -> Dic
         logger.error(f"Configuration validation failed: {error}")
         sys.exit(1)
 
-    logger.info(f"Loaded and validated API configuration from {api_config_path}")
     return config_data
 
 
@@ -47,7 +46,6 @@ def _load_system_prompt(config: Dict[str, Any], base_path: Path) -> None:
     system_prompt_file = base_path / "01.CONFIG" / "system_prompt.md"
     if system_prompt_file.exists():
         config["system_prompt"] = system_prompt_file.read_text(encoding='utf-8', errors='replace')
-        logger.info(f"Loaded system prompt from system_prompt.md ({len(config['system_prompt'])} chars)")
     else:
         logger.error("No system prompt found - system_prompt.md missing")
         raise FileNotFoundError("No system prompt configuration found in USER-FILES/01.CONFIG/")
@@ -127,7 +125,6 @@ def load_strict_config(profile_name: Optional[str] = None) -> Dict[str, Any]:
         logger.error(error_report)
         sys.exit(1)
 
-    logger.success("✅ Configuration validation passed - NO DEFAULTS policy enforced")
     return config
 
 

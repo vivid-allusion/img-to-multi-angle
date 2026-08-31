@@ -62,9 +62,7 @@ class BaseOrchestrator(ABC):
     def _initialize_api_client(self) -> OpenRouter:
         """Initialize and configure the OpenRouter API client."""
         api_key = get_api_key()
-        client = OpenRouter(api_key=api_key)
-        logger.info("API client initialized")
-        return client
+        return OpenRouter(api_key=api_key)
 
     @abstractmethod
     def process_batch(self, files: list, client: OpenRouter, output_dir: Path) -> Dict[str, Any]:

@@ -10,6 +10,7 @@ from loguru import logger
 
 from .md_input_parser import parse_md_file, _parse_checkbox_line, ParsedMdInput
 from .checkbox_validator import validate_checkboxes
+from .reporting import short_url
 
 MAX_IMAGE_BYTES = 20_000_000
 
@@ -141,7 +142,7 @@ def _check_image_url(url: str, filename: str, cache: Dict[str, bool]) -> None:
             )
 
     cache[url] = True
-    logger.info(f"Image URL OK ({content_type}, {content_length or 'no length'} bytes): {url}")
+    logger.info(f"Image verified: {short_url(url)}")
 
 
 def _check_model_vision(config: Dict[str, Any], client: OpenRouter) -> None:
@@ -162,4 +163,4 @@ def _check_model_vision(config: Dict[str, Any], client: OpenRouter) -> None:
             f"(input_modalities={list(model.architecture.input_modalities)})"
         )
 
-    logger.info(f"Model '{model_id}' accepts image input")
+    logger.info(f"Model vision verified: {model_id}")

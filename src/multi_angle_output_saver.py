@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Dict, List
 from loguru import logger
 
+from .reporting import short_name
+
 
 def copy_raw_md_file(input_path: Path, output_dir: Path) -> Path:
     """Copy raw MD file verbatim to output directory.
@@ -79,8 +81,8 @@ def save_angle_outputs(
         output_path = sub_dir / filename
         output_path.write_text(content, encoding="utf-8")
         saved.append(output_path)
-        logger.info(f"Saved: {output_path.relative_to(output_dir)}")
+        logger.info(f"  ✓ Saved: {shot_id}_{slug}.md")
 
-    logger.success(f"Saved {len(saved)} shot outputs for {input_name}")
+    logger.success(f"Generated {len(saved)} shot files for {short_name(input_name)}")
 
     return saved

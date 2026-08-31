@@ -10,6 +10,7 @@ from .md_input_parser import ParsedMdInput
 from .shot_plan import ShotEntry, shot_entries_from_list
 from .shot_sheet import ShotSheet, shot_sheet_from_dict
 from .payload_builder import build_user_content
+from .reporting import short_name
 
 PLAN_SYSTEM_PROMPT = (
     "You are a master film director and cinematographer. Given an original scene image and "
@@ -140,5 +141,5 @@ def plan_file(
     except (KeyError, TypeError, ValueError) as e:
         raise RuntimeError(f"{filename}: plan call returned an invalid shot list: {e}") from e
 
-    logger.info(f"Planned {filename}: {len(sheet.subjects)} subjects, {len(entries)} shots")
+    logger.info(f"Planned {len(entries)} cinematic shots for {short_name(filename)}")
     return sheet, entries

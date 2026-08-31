@@ -16,6 +16,7 @@ from .multi_angle_output_saver import save_angle_outputs
 from .data_models import ProcessingResult, UsageData
 from .exceptions import FileProcessingError
 from .shot_plan import ShotEntry
+from .reporting import short_name
 
 
 class MultiAngleOrchestrator(BaseOrchestrator):
@@ -85,19 +86,19 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                         f"{md_path.name}: ticked shot '{shot_id}' not found in shot-plan block"
                     )
                 shots_to_run.append((entry, ground_ids or []))
-            logger.info(f"Processing {md_path.name}: {len(shots_to_run)} pre-selected shots")
+            logger.info(f"Processing {short_name(md_path.name)}: {len(shots_to_run)} pre-selected shots")
         else:
-            logger.info(f"Auto-planning shots for raw input: {md_path.name}")
+            logger.info(f"Auto-planning shots for {short_name(md_path.name)}...")
             from .shot_planner import plan_file
             sheet, entries = plan_file(parsed, md_path.name, client, self.config)
             shots_to_run = [(e, e.grounds) for e in entries]
-            logger.info(f"Processing {md_path.name}: {len(shots_to_run)} auto-planned shots")
+            logger.info(f"Generating {len(shots_to_run)} auto-planned shots for {short_name(md_path.name)}")
 
         cache_config = self.config.get("cache_config", {})
         use_cache = cache_config.get("enabled", False) and len(shots_to_run) >= 2
         cache_ttl = cache_config.get("cache_ttl") if use_cache else None
         if use_cache:
-            logger.info(f"Prompt caching active for {md_path.name} (TTL: {cache_ttl})")
+            logger.info(f"Prompt caching active (TTL: {cache_ttl})")
 
         system_prompt = build_system_prompt(self.config)
         assets_by_id = {a.id: a for a in parsed.assets} if parsed.assets is not None else {}
@@ -106,8 +107,10 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         grounds_by_angle: Dict[str, List[str]] = {}
         labels_by_shot: Dict[str, str] = {}
 
-        for entry, ground_ids in shots_to_run:
+        total_shots = len(shots_to_run)
+        for i, (entry, ground_ids) in enumerate(shots_to_run, 1):
             shot_id = entry.id
+            logger.info(f"  [{i}/{total_shots}] {shot_id}: {entry.label}")
             user_msg = render_user_message(self.um_template, entry.label, entry.intent)
 
             if parsed.assets is None:

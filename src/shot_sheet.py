@@ -87,7 +87,6 @@ def extract_shot_sheet(content: str, filename: str) -> Tuple[Optional[ShotSheet]
     except (KeyError, TypeError, ValueError) as e:
         raise ValueError(f"{filename}: invalid shot-sheet block: {e}") from e
 
-    logger.info(f"{filename}: shot-sheet block parsed ({len(sheet.subjects)} subjects)")
     return sheet, block_text
 
 

@@ -157,7 +157,6 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
         if _in_assets_fence(i):
             continue
         if _is_skippable_line(line):
-            logger.info(f"Skipping line in {file_path.name} (embed/URL): {line.strip()}")
             continue
         scene_lines.append(line.strip())
 
@@ -210,21 +209,6 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
     roster = {s.id for s in shot_sheet.subjects} if shot_sheet else None
     shot_entries = extract_shot_plan(
         content, file_path.name, roster=roster, declared_assets=declared_assets
-    )
-
-    if assets is None:
-        logger.info(
-            f"{file_path.name}: no assets block — every shot receives all "
-            f"{len(ref_images)} references"
-        )
-
-    logger.info(
-        f"Parsed {file_path.name}: scene={len(scene)} chars, "
-        f"original_image=1, checkboxes={len(checkbox_lines)}, "
-        f"checked={len(checked_shots)}, ref_images={len(ref_images)}, "
-        f"shot_sheet={'yes' if shot_sheet else 'no'}, "
-        f"shot_plan={'yes' if shot_entries is not None else 'no'}, "
-        f"assets={'yes' if assets is not None else 'no'}"
     )
 
     return ParsedMdInput(

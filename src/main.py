@@ -9,6 +9,7 @@ from .config import load_strict_config, get_output_directory
 from .cli_handler import CLIHandler
 from .md_input_parser import discover_md_files
 from .exceptions import ConfigurationError, FileProcessingError
+from .reporting import setup_cli_logging, short_name
 
 
 def parse_arguments():
@@ -70,7 +71,6 @@ def validate_profile_selection(args):
         return args.profile
 
     if len(yaml_files) == 1:
-        logger.info(f"Auto-detected single profile: {yaml_files[0].name}")
         return yaml_files[0].name
 
     logger.error("Multiple profiles found in USER-FILES/03.PROFILES/")
@@ -92,9 +92,7 @@ def load_configuration(args):
 
         if "profile_metadata" in config:
             metadata = config["profile_metadata"]
-            logger.info(f"Using profile: {metadata.get('profile_name', 'Unknown')}")
-            if metadata.get("description"):
-                logger.info(f"Description: {metadata['description']}")
+            logger.info(f"Using profile: {metadata.get('profile_name', 'Unknown')} ({config.get('model')})")
 
         return config
 
@@ -134,6 +132,7 @@ def _maybe_run_selftest(config) -> None:
 
 def main():
     """Main entry point."""
+    setup_cli_logging()
     args = parse_arguments()
 
     if args.list_profiles:

@@ -23,10 +23,7 @@ def load_user_message_template(template_path: Path) -> str:
         logger.error(f"User message template not found: {template_path}")
         raise FileNotFoundError(f"User message template not found: {template_path}")
 
-    content = template_path.read_text(encoding="utf-8")
-    logger.info(f"Loaded user message template ({len(content)} chars)")
-
-    return content
+    return template_path.read_text(encoding="utf-8")
 
 
 def render_user_message(template: str, label: str, intent: str) -> str:
