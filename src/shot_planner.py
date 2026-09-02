@@ -1,7 +1,7 @@
 """Shot planner: one vision call per input file producing dynamic cinematic shots."""
 
 import json
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from openrouter import OpenRouter
 from loguru import logger
 
@@ -108,10 +108,23 @@ RESPONSE_FORMAT = {
 }
 
 
+def _clean_json_text(text: str) -> str:
+    """Clean markdown code fences and whitespace from JSON response."""
+    s = text.strip()
+    if s.startswith("```"):
+        lines = s.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        s = "\n".join(lines).strip()
+    return s
+
+
 def plan_file(
     parsed: ParsedMdInput, filename: str, client: OpenRouter, config: Dict[str, Any]
 ) -> Tuple[ShotSheet, List[ShotEntry]]:
-    """One vision call → (ShotSheet, shot list).
+    """One vision call → (ShotSheet, shot list) with automatic retries.
 
     With declared assets the plan call receives every asset as a labelled
     image part; raw files pass bare ref URLs.
@@ -128,61 +141,82 @@ def plan_file(
         angle_text=PLAN_INSTRUCTION,
     )
 
-    response_text, _ = process_text(
-        user_content,
-        client,
-        config,
-        system_prompt=PLAN_SYSTEM_PROMPT,
-        skip_token_floor=True,
-        response_format=RESPONSE_FORMAT,
-    )
+    retry_config = config.get("retry_config", {})
+    max_retries = retry_config.get("max_retries", 2)
+    total_attempts = max_retries + 1
+    last_error: Optional[Exception] = None
 
-    try:
-        data = json.loads(response_text)
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"{filename}: plan call returned invalid JSON: {e}") from e
-
-    if not isinstance(data, dict):
-        raise RuntimeError(f"{filename}: plan call returned a non-object JSON value")
-
-    try:
-        sheet = shot_sheet_from_dict(data)
-    except (KeyError, TypeError, ValueError) as e:
-        raise RuntimeError(f"{filename}: plan call returned an invalid shot sheet: {e}") from e
-
-    declared_ids = {a.id for a in parsed.assets} if parsed.assets is not None else set()
-    for subject in sheet.subjects:
-        if subject.asset and subject.asset not in declared_ids:
-            raise RuntimeError(
-                f"{filename}: subject {subject.id} bound to undeclared asset "
-                f"'{subject.asset}' — aborting plan (declared: {sorted(declared_ids)})"
+    for attempt in range(1, total_attempts + 1):
+        try:
+            response_text, _ = process_text(
+                user_content,
+                client,
+                config,
+                system_prompt=PLAN_SYSTEM_PROMPT,
+                skip_token_floor=True,
+                response_format=RESPONSE_FORMAT,
             )
 
-    roster = {s.id for s in sheet.subjects}
-    asset_check = declared_ids if parsed.assets is not None else None
-    try:
-        entries = shot_entries_from_list(
-            data["shots"], filename, roster=roster, declared_assets=asset_check
-        )
-    except (KeyError, TypeError, ValueError) as e:
-        raise RuntimeError(f"{filename}: plan call returned an invalid shot list: {e}") from e
+            cleaned_text = _clean_json_text(response_text)
+            try:
+                data = json.loads(cleaned_text)
+            except json.JSONDecodeError as e:
+                raise RuntimeError(f"plan call returned invalid JSON: {e}") from e
 
-    if sheet.subjects:
-        missing = MANDATORY_SHOT_TYPES - {e.shot_type for e in entries}
-        if missing:
-            raise RuntimeError(
-                f"{filename}: plan covers {len(sheet.subjects)} human subject(s) but is missing "
-                f"mandatory coverage {sorted(missing)} — "
-                f"proposed: {sorted({e.shot_type for e in entries})}"
-            )
+            if not isinstance(data, dict):
+                raise RuntimeError("plan call returned a non-object JSON value")
 
-    for entry in entries:
-        hits = find_banned(entry.intent)
-        if hits:
-            raise RuntimeError(
-                f"{filename}: shot {entry.id} intent uses forbidden word(s) {hits} — "
-                "intents must describe only what a camera can capture"
-            )
+            try:
+                sheet = shot_sheet_from_dict(data)
+            except (KeyError, TypeError, ValueError) as e:
+                raise RuntimeError(f"plan call returned an invalid shot sheet: {e}") from e
 
-    logger.info(f"Planned {len(entries)} cinematic shots for {short_name(filename)}")
-    return sheet, entries
+            declared_ids = {a.id for a in parsed.assets} if parsed.assets is not None else set()
+            for subject in sheet.subjects:
+                if subject.asset and subject.asset not in declared_ids:
+                    raise RuntimeError(
+                        f"subject {subject.id} bound to undeclared asset "
+                        f"'{subject.asset}' — aborting plan (declared: {sorted(declared_ids)})"
+                    )
+
+            roster = {s.id for s in sheet.subjects}
+            asset_check = declared_ids if parsed.assets is not None else None
+            try:
+                entries = shot_entries_from_list(
+                    data["shots"], filename, roster=roster, declared_assets=asset_check
+                )
+            except (KeyError, TypeError, ValueError) as e:
+                raise RuntimeError(f"plan call returned an invalid shot list: {e}") from e
+
+            if sheet.subjects:
+                missing = MANDATORY_SHOT_TYPES - {e.shot_type for e in entries}
+                if missing:
+                    raise RuntimeError(
+                        f"plan covers {len(sheet.subjects)} human subject(s) but is missing "
+                        f"mandatory coverage {sorted(missing)} — "
+                        f"proposed: {sorted({e.shot_type for e in entries})}"
+                    )
+
+            for entry in entries:
+                hits = find_banned(entry.intent)
+                if hits:
+                    raise RuntimeError(
+                        f"shot {entry.id} intent uses forbidden word(s) {hits} — "
+                        "intents must describe only what a camera can capture"
+                    )
+
+            logger.info(f"Planned {len(entries)} cinematic shots for {short_name(filename)}")
+            return sheet, entries
+
+        except Exception as e:
+            last_error = e
+            if attempt < total_attempts:
+                logger.warning(
+                    f"Plan attempt {attempt}/{total_attempts} for {short_name(filename)} failed: {e} — retrying..."
+                )
+            else:
+                raise RuntimeError(
+                    f"{filename}: plan call failed after {total_attempts} attempts: {last_error}"
+                ) from last_error
+
+    raise RuntimeError(f"{filename}: plan call failed after {total_attempts} attempts: {last_error}")
