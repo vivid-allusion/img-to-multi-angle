@@ -1,3 +1,136 @@
+## Last Session Summary (2026-09-02) — Grounded Human & Action Shot Coverage + Concrete Prompt Craft
+
+### Feature Implementation — ✅ COMPLETE (verified live)
+
+Spec `USER-FILES/07.TEMP/new_feature.md`; design forks Q1–Q6 resolved in
+`USER-FILES/07.TEMP/questions.md`. Two failures fixed: the planner covered props instead of
+people (a lantern macro while the overseer stood uncovered), and prompts leaned on abstract
+film jargon and preservation boilerplate that a diffusion model cannot render.
+
+### Decisions (Q1–Q6)
+- **Q1** — banned-word scan on planner intents *and* generated prompts; one retry per shot naming
+  the offending words, then abort. First-hit abort would discard five good prompts and a paid
+  planning call over one stray adjective.
+- **Q2** — the `"Reframe the provided image of …"` opener **stays**; blocking applies after it.
+  It is what tells an image-to-image model it is transforming the attached image.
+- **Q3** — abstract preservation clauses deleted; identity held by naming visible specifics
+  ("the ankle-length black wool overcoat"). Reference-image notes kept — they are factual
+  statements about attached files and are what makes Phase-1 per-shot asset routing pay off.
+- **Q4** — word band 60–90 → **70–110**. The spec's own framing clause is 24 words; the old
+  ceiling would have squeezed out the setting pillar §4A makes mandatory.
+- **Q5** — coverage hierarchy and the object-CU ban apply **only when human subjects exist**.
+  Preserves the verified car-exterior capability (BMW M3, commit 93f6985).
+- **Q6** — `shot_type` enum added to the schema; human-present plans missing mandatory coverage
+  abort. A prose-only fix was the one option with direct evidence against it.
+
+### New Modules (2)
+- `banned_words.py` (57) — `BANNED_WORDS` tuple (abstract nouns, editorialising modifiers) plus a
+  `BOILERPLATE` regex catching preserve/maintain/retain applied to character, wardrobe, period,
+  lighting, palette, setting, or appearance across up to three intervening words. `find_banned()`
+  returns matched surface forms. Flags 6/6 known-bad prompts, 0 false positives on the spec's
+  ALLOWED list — including the true negative "maintaining her grip on the rope" (physical action).
+- `shot_generator.py` (114) — the per-shot loop (render → build → call → scan → retry → accumulate)
+  extracted from the orchestrator when the retry pushed it to 277 lines. `accumulate_usage()`
+  counts a retried shot's first attempt too — it really was billed.
+
+### Modules Modified (6)
+- `shot_plan.py` (129) — `SHOT_TYPES` (6 slots) and `MANDATORY_SHOT_TYPES`
+  (`face_cu`/`hands_insert`/`wide_master`); `ShotEntry.shot_type`; unknown value → ValueError at
+  parse time, empty stays legal so legacy shot-plan fences still parse.
+- `shot_planner.py` (188) — `shot_type` in `SHOT_SHEET_SCHEMA` properties *and* `required` (strict
+  schema demands both); coverage gate scoped to `if sheet.subjects`; intent scan; PLAN_SYSTEM_PROMPT
+  rewritten with the ranked hierarchy, the Q5-scoped Forbidden Focus, and an explicit human-less
+  escape clause.
+- `multi_angle_orchestrator.py` (277 → 190) — loop delegated to `generate_shots()`.
+- `USER-FILES/01.CONFIG/system_prompt.md` — Framing Translation table (boundaries, never "CU"),
+  Three Pillars, Blocking, the BANNED list, a "Holding Identity Without Boilerplate" section, and
+  four new few-shots (face CU / hands insert / low-angle medium / OTS reverse) at 85–92 words each.
+- `USER-FILES/01.CONFIG/user_message.md` — aligned; `[Shot label]`/`[Shot intent]` placeholders
+  preserved verbatim (`render_user_message` does literal substitution).
+- `dry_run_estimator.py` (105) — auto-plan branch 5 → 6 shots.
+
+### Verification — ALL PASSED
+- **Offline battery (43 checks)**: ban scan vs 6 known-bad prompts and the ALLOWED list;
+  `shot_type` parse/reject/legacy; fence round-trip; coverage-gate set logic; placeholder
+  substitution; few-shot word band and cleanliness; no stale 60–90 band anywhere.
+- **Failure battery (11 checks)**: missing `face_cu` → exit 1; dirty planner intent → exit 1;
+  prompt dirty twice → exit 1; **dirty once → retry recovers and the run completes**; bad fence
+  `shot_type` → ValueError; **human-less scene still passes** (Q5 regression guard). Every
+  exit-1 case left a `_FAILED` dir and zero promoted output.
+- **Live run** (`google/gemini-3.7-flash`, $0.0457): 6 shots planned as Overseer Face Close-Up,
+  Worker Face Close-Up, Platform Overseer Medium, Rope Binding Insert, Rail Depot Master,
+  Low-Angle Wagon Vantage — the §2 hierarchy exactly. All six prompts 77–81 words, zero banned
+  words, zero CU/MCU/OTS abbreviation leaks, no retries needed. `04.INPUT/` sha256-unchanged.
+- **Health**: every `src/*.py` under the 250 soft limit (largest: `md_input_parser.py` 225);
+  0 `print()`, 0 TODO/FIXME; compileall clean.
+
+### Correction to an earlier summary
+The 2026-08-31 entry lists `src/system_prompt.md` and `src/user_message.md`. Both live in
+`USER-FILES/01.CONFIG/` — see `config.py:46` and `multi_angle_orchestrator.py:28`.
+
+### Gotchas learned this session — do not rediscover these
+- **Strict JSON schema needs a new field in two places.** `SHOT_SHEET_SCHEMA` runs with
+  `strict: true` and `additionalProperties: false`, so `shot_type` had to go into the shot item's
+  `properties` *and* its `required` list. Adding only `properties` makes the provider reject the
+  call outright.
+- **The boilerplate regex needs a word gap, not a determiner list.** The first version allowed only
+  `the|all|its|their` between the verb and the noun, which caught "Preserve character appearances"
+  but missed "Maintain the cool twilight palette" — adjectives intervene. A bounded
+  `(?:\w+\s+){0,3}` gap fixed it and took known-bad detection from 5/6 to 6/6. The negative
+  control that must keep passing: `"maintaining her grip on the rope"` is a physical action and
+  must stay clean. Any future widening of that regex has to be re-checked against it.
+- **Retries are billed.** `accumulate_usage()` in `shot_generator.py` folds the first, rejected
+  attempt into the usage total as well. A retried shot really did cost two calls and the cost
+  report should say so — do not "optimise" that away.
+- **Order of work.** The banned-word scan and the coverage gate are read by everything downstream,
+  so they land first; the word band must be set before the few-shot examples are authored, or the
+  examples get retrofitted to a band they were not written for.
+
+### Documentation
+`README.md` rewritten this session (T18, out of brief — owner approved it mid-session). Gone: the
+17-template description, the `--plan` workflow, the manual review gate, a `kimi-k2-thinking`
+profile that does not exist, and the 60–90 word band. Now documents the single-pass flow, the
+coverage hierarchy, the prompt-craft rules, and corrected troubleshooting rows.
+
+### Where the verification lives — READ THIS BEFORE TOUCHING THE FEATURE
+The offline battery (43 checks) and failure battery (11 checks) were written to the session
+scratchpad under `/tmp` and are **gone**. They are not in the repo. There is no test directory and
+no test runner in this project, which matches the manifesto's "test with real data in real
+scenarios" — but it means the next change to the ban list, the coverage gate, or the retry path has
+no automatic safety net. Both batteries were pure-Python with monkeypatched API calls and are
+cheap to rebuild; what they covered is listed under "Verification" above. Decide whether to
+reconstruct them before editing `banned_words.py`, `shot_planner.py`, or `shot_generator.py`.
+
+### Nextcloud conflicted copy — needs a decision
+`src/banned_words (conflicted copy 2026-09-02 190128).py` sits untracked in `src/`. Nextcloud
+created it mid-session and it silently reverted a live edit to the boilerplate regex once, which
+cost a debugging cycle — the file on disk stopped matching what had just been written. Contents
+are now byte-identical to `src/banned_words.py`, so deleting it loses nothing. Left in place
+because it was not created by this session's work. **If Nextcloud sync is active while editing,
+expect edits to be reverted under you; re-read a file after writing it if behaviour looks stale.**
+
+### Git state
+Uncommitted on `feature/grounded-human-action-coverage`: 2 new modules (`banned_words.py`,
+`shot_generator.py`), 7 modified (`shot_plan.py`, `shot_planner.py`,
+`multi_angle_orchestrator.py`, `dry_run_estimator.py`, both `01.CONFIG` prompt assets,
+`README.md`), plus `AGENTS.md`. Commit awaits the owner's go per repo discipline.
+
+### Still open — re-verified 2026-09-02, all still true
+- `stream`, `processing_options.*`, and `retry_config` are **required** by `config.py:57-79`
+  (missing → hard fail) but never read for behaviour. Either wire them up or drop them from the
+  required set; right now they are mandatory dead weight in every profile.
+- No client timeout is set on the OpenRouter client. The live plan call took 98 seconds this
+  session; a hung call has nothing to stop it.
+- `reporting.py:73` emits "See COST.md for detailed breakdown" — nothing writes COST.md.
+- `reporting.py:88` prints "Name: Unknown" when profile metadata lacks a `name` key.
+- `stats["failed"]` / `stats["errors"]` are initialised in `multi_angle_orchestrator.py` (lines 36,
+  41, 155, 160) and never incremented. This is now dead **by design**, not a bug: any per-file
+  failure raises `FileProcessingError`, which aborts the whole run through `fail_run()` + exit 1.
+  There is no partial-success path left. Delete the keys or accept them as vestigial.
+- Preflight failures surface as raw tracebacks rather than a clean message + exit.
+
+---
+
 ## Last Session Summary (2026-08-31) — Direct Multi-Angle Cinematic Reframing (Single-Pass)
 
 ### Feature Implementation — ✅ COMPLETE (verified live)

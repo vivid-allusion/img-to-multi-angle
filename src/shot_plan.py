@@ -16,6 +16,21 @@ SHOT_PLAN_FENCE = "```yaml shot-plan"
 
 SHOT_ID_PATTERN = re.compile(r"^SH\d+$")
 
+# The coverage slot each shot fills. Mandatory types for human-present scenes are
+# enforced in shot_planner.plan_file(); this is the shared vocabulary.
+SHOT_TYPES = (
+    "face_cu",
+    "medium_action",
+    "hands_insert",
+    "wide_master",
+    "dynamic_vantage",
+    "object_insert",
+)
+
+# Coverage a scene containing people must include (feature spec §2). Scenes with
+# no human subjects are exempt — see shot_planner.plan_file().
+MANDATORY_SHOT_TYPES = frozenset({"face_cu", "hands_insert", "wide_master"})
+
 
 @dataclass
 class ShotEntry:
@@ -24,6 +39,7 @@ class ShotEntry:
     id: str
     label: str
     intent: str
+    shot_type: str = ""
     subject_ids: List[str] = field(default_factory=list)
     grounds: List[str] = field(default_factory=list)
     recommended: bool = True
@@ -70,6 +86,13 @@ def shot_entries_from_list(
                     f"{undeclared} — declared: {sorted(declared_assets)}"
                 )
 
+        shot_type = str(item.get("shot_type", "")).strip()
+        if shot_type and shot_type not in SHOT_TYPES:
+            raise ValueError(
+                f"{filename}: shot {shot_id} has unknown shot_type '{shot_type}' — "
+                f"expected one of {list(SHOT_TYPES)}"
+            )
+
         intent = str(item["intent"]).strip()
         label = str(item["label"]).strip()
         if not intent:
@@ -82,6 +105,7 @@ def shot_entries_from_list(
                 id=shot_id,
                 label=label,
                 intent=intent,
+                shot_type=shot_type,
                 subject_ids=subject_ids,
                 grounds=grounds,
                 recommended=bool(item.get("recommended", True)),

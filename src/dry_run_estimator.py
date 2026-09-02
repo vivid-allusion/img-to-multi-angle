@@ -18,7 +18,13 @@ class DryRunEstimator:
         self.client = OpenRouter(api_key=api_key)
 
     def estimate_md_file_cost(self, md_path: Path) -> Dict[str, Any]:
-        """Estimate cost for one MD file (selected or auto-planned shots)."""
+        """Estimate cost for one MD file (selected or auto-planned shots).
+
+        Auto-planned files assume the full 6-shot coverage package. Retries
+        triggered by the banned-word scan are not modelled — they are the
+        exception, and `avg_output_tokens` (profile YAML) should be re-tuned
+        upward after the first live run under the 70-110 word band.
+        """
         parsed = parse_md_file(md_path)
 
         if parsed.checked_shots and parsed.shot_entries:
@@ -34,8 +40,8 @@ class DryRunEstimator:
             num_shots = len(shots)
             shot_tokens = sum((len(e.label) + len(e.intent)) // 4 for e in shots)
         else:
-            num_shots = 5
-            shot_tokens = 5 * 25
+            num_shots = 6
+            shot_tokens = 6 * 25
 
         system_tokens = len(self.config.get("system_prompt", "")) // 4
         scene_tokens = len(parsed.scene) // 4

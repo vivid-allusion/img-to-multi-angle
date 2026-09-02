@@ -9,9 +9,8 @@ from loguru import logger
 
 from .base_orchestrator import BaseOrchestrator
 from .md_input_parser import parse_md_file
-from .user_message_template import load_user_message_template, render_user_message
-from .payload_builder import build_user_content
-from .api_client import process_text, build_system_prompt
+from .user_message_template import load_user_message_template
+from .shot_generator import generate_shots
 from .multi_angle_output_saver import save_angle_outputs
 from .data_models import ProcessingResult, UsageData
 from .exceptions import FileProcessingError
@@ -74,8 +73,6 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                 cost=0.0,
             )
 
-        total_usage: Dict[str, Any] = {}
-
         if parsed.checked_shots:
             entries_by_id = {e.id: e for e in parsed.shot_entries or []}
             shots_to_run: List[Tuple[ShotEntry, List[str]]] = []
@@ -94,60 +91,9 @@ class MultiAngleOrchestrator(BaseOrchestrator):
             shots_to_run = [(e, e.grounds) for e in entries]
             logger.info(f"Generating {len(shots_to_run)} auto-planned shots for {short_name(md_path.name)}")
 
-        cache_config = self.config.get("cache_config", {})
-        use_cache = cache_config.get("enabled", False) and len(shots_to_run) >= 2
-        cache_ttl = cache_config.get("cache_ttl") if use_cache else None
-        if use_cache:
-            logger.info(f"Prompt caching active (TTL: {cache_ttl})")
-
-        system_prompt = build_system_prompt(self.config)
-        assets_by_id = {a.id: a for a in parsed.assets} if parsed.assets is not None else {}
-
-        angle_results = {}
-        grounds_by_angle: Dict[str, List[str]] = {}
-        labels_by_shot: Dict[str, str] = {}
-
-        total_shots = len(shots_to_run)
-        for i, (entry, ground_ids) in enumerate(shots_to_run, 1):
-            shot_id = entry.id
-            logger.info(f"  [{i}/{total_shots}] {shot_id}: {entry.label}")
-            user_msg = render_user_message(self.um_template, entry.label, entry.intent)
-
-            if parsed.assets is None:
-                shot_refs = parsed.ref_images
-                ground_urls = list(parsed.ref_images)
-            else:
-                shot_refs = [assets_by_id[gid] for gid in ground_ids if gid in assets_by_id]
-                ground_urls = [a.url for a in shot_refs]
-
-            try:
-                user_content = build_user_content(
-                    scene=parsed.scene,
-                    original_image=parsed.original_image,
-                    ref_images=shot_refs,
-                    angle_text=user_msg,
-                    cache_breakpoint=use_cache,
-                    cache_ttl=cache_ttl,
-                )
-                response_text, usage_data = process_text(
-                    user_content, client, self.config, system_prompt=system_prompt
-                )
-            except Exception as e:
-                raise FileProcessingError(f"{md_path.name} shot '{shot_id}': {e}") from e
-
-            angle_results[shot_id] = response_text
-            grounds_by_angle[shot_id] = ground_urls
-            labels_by_shot[shot_id] = entry.label
-
-            if usage_data:
-                for key in (
-                    "input_tokens",
-                    "output_tokens",
-                    "cache_creation_input_tokens",
-                    "cache_read_input_tokens",
-                    "cost",
-                ):
-                    total_usage[key] = total_usage.get(key, 0) + usage_data.get(key, 0)
+        angle_results, grounds_by_angle, labels_by_shot, total_usage = generate_shots(
+            parsed, shots_to_run, md_path.name, client, self.config, self.um_template
+        )
 
         saved_files = save_angle_outputs(
             output_dir,
