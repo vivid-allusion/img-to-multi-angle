@@ -1,9 +1,9 @@
 """Pre-API validation. Everything validatable runs before the first API call
 and before any output directory exists."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 import httpx
 from openrouter import OpenRouter
 from loguru import logger
@@ -21,12 +21,14 @@ class PreflightError(RuntimeError):
 
 @dataclass
 class PreflightReport:
-    """Summary of a passed preflight run."""
+    """Summary of a passed preflight run, plus the parsed files the
+    orchestrator generates from (no second parse per file)."""
 
     files_validated: int
     urls_checked: int
     model_id: str
     vision_capable: bool
+    parsed_files: List[Tuple[Path, ParsedMdInput]] = field(default_factory=list)
 
 
 def _check_groundings(filename: str, parsed: ParsedMdInput) -> None:
@@ -85,13 +87,13 @@ def run_preflight(
                 md_path.name,
             )
         _check_groundings(md_path.name, parsed)
-        parsed_files.append((md_path.name, parsed))
+        parsed_files.append((md_path, parsed))
 
     url_cache: Dict[str, bool] = {}
-    for filename, parsed in parsed_files:
+    for _md_path, parsed in parsed_files:
         asset_urls = [a.url for a in parsed.assets] if parsed.assets is not None else []
         for url in [parsed.original_image, *asset_urls, *parsed.ref_images]:
-            _check_image_url(url, filename, url_cache)
+            _check_image_url(url, _md_path.name, url_cache)
 
     _check_model_vision(config, client)
 
@@ -100,6 +102,7 @@ def run_preflight(
         urls_checked=len(url_cache),
         model_id=config["model"],
         vision_capable=True,
+        parsed_files=parsed_files,
     )
 
 

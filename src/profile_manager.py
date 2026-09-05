@@ -81,10 +81,6 @@ def list_available_profiles() -> List[str]:
                         else:
                             model_display = str(profile["model"])
 
-                    profile_name = yaml_file.stem
-                    if "metadata" in profile:
-                        profile_name = profile["metadata"].get("profile_name", yaml_file.stem)
-
                     status = "✓" if enabled else "✗"
                     profiles.append(f"  {status} {yaml_file.name:<45} [{model_display:<20}]")
         except Exception as e:
@@ -163,24 +159,6 @@ def _apply_cache_config(config: Dict[str, Any], profile: Dict[str, Any]) -> None
     logger.info(f"Prompt caching enabled (TTL: {cache_config['cache_ttl']}) — breakpoint on the stable user prefix (scene + images)")
 
 
-def _apply_prompt_suffix(config: Dict[str, Any], profile: Dict[str, Any]) -> None:
-    """Apply prompt suffix configuration from profile."""
-    if "prompt_suffix" not in profile:
-        return
-
-    suffix_config = profile["prompt_suffix"]
-    if isinstance(suffix_config, dict):
-        if suffix_config.get("enabled", True):
-            config["prompt_suffix"] = suffix_config.get("text", "")
-            config["prompt_suffix_options"] = {
-                "add_line_break": suffix_config.get("add_line_break", False),
-                "check_existing_params": suffix_config.get("check_existing_params", True)
-            }
-            logger.info(f"Loaded prompt suffix: {config['prompt_suffix']}")
-    else:
-        config["prompt_suffix"] = profile["prompt_suffix"]
-
-
 def apply_profile_to_config(config: Dict[str, Any], profile: Dict[str, Any]) -> None:
     """Apply profile settings to configuration dictionary.
 
@@ -195,10 +173,6 @@ def apply_profile_to_config(config: Dict[str, Any], profile: Dict[str, Any]) -> 
     _apply_parameters(config, profile)
     _apply_pricing(config, profile)
     _apply_cache_config(config, profile)
-    _apply_prompt_suffix(config, profile)
-
-    if "fields_to_remove" in profile:
-        config["fields_to_remove"] = profile["fields_to_remove"]
 
     if "metadata" in profile:
         config["profile_metadata"] = profile["metadata"]

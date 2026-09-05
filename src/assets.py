@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-import yaml
+from .fences import extract_fenced_block
 
 ASSETS_FENCE = "```yaml assets"
 ASSET_ID_PATTERN = re.compile(r"^A\d+$")
@@ -37,29 +37,9 @@ def extract_assets_block(
     The returned fence range indexes into content.splitlines() so the caller
     can exclude the block from scene text and image scanning.
     """
-    lines = content.splitlines()
-    fence_idx = None
-    for i, line in enumerate(lines):
-        if line.strip() == ASSETS_FENCE:
-            fence_idx = i
-            break
-
-    if fence_idx is None:
+    data, fence_range = extract_fenced_block(content, ASSETS_FENCE, filename, "assets")
+    if fence_range is None:
         return None, None
-
-    block_lines = []
-    end_idx = fence_idx
-    for line in lines[fence_idx + 1:]:
-        end_idx += 1
-        if line.strip() == "```":
-            break
-        block_lines.append(line)
-
-    block_text = "\n".join(block_lines)
-    try:
-        data = yaml.safe_load(block_text)
-    except yaml.YAMLError as e:
-        raise ValueError(f"{filename}: malformed assets block: {e}") from e
 
     if data is None:
         data = []
@@ -95,4 +75,4 @@ def extract_assets_block(
         seen_ids.add(asset.id)
         assets.append(asset)
 
-    return assets, (fence_idx, end_idx)
+    return assets, fence_range

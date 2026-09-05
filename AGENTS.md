@@ -1,3 +1,287 @@
+## Last Session Summary (2026-09-05) — Session Close-out: Cleanup Verified, TODO Wiped
+
+### Work done — ✅ COMPLETE
+- Re-verified the cleanup batch end-to-end at close-out: 44/44, 11/11, 9/9; compileall
+  clean; 32 files / 3,523 lines; 0 print()/TODO/FIXME; unused-import scan clean;
+  `--list-profiles` / `--cost-only` ($0.1057, 9 files) / `--dry-run` all exit 0.
+- One cosmetic fix landed: `reporting.generate_summary` no longer emits an empty
+  "## Statistics" header on dry-run summaries (section is now inside the
+  `processed > 0` guard).
+- TODO.md wiped to 0 bytes per repo discipline — all 17 cleanup tasks were executed,
+  checked off, and are recorded in the previous summary; this entry is the standing
+  reference.
+
+### Remaining known items (NOT bugs — do not schedule as refactor backlog)
+- `cli_handler.py:69` uses `stats.get('skipped', 0)` / `.get('total_cost', 0.0)` —
+  defensive but redundant; both keys always exist in `_empty_stats`. Optional one-line
+  consistency polish.
+- Live single-pass run with a real key remains the gate before any commit (unchanged).
+
+### Git state
+Uncommitted: cleanup batch (7 modified src/, deleted src/data_models.py, requirements.txt,
+run.py, deleted scripts/generate_profiles.py + PROFILE_GUIDE.md) stacked on the
+still-uncommitted 2026-09-05 refactor batch (31 modified src/, 2 new modules, 3 config/docs,
+2 batteries). Commit awaits the owner's go.
+
+---
+
+## Last Session Summary (2026-09-05) — Cleanup Backlog Executed: All 17 Tasks
+
+### Work done — ✅ COMPLETE (all 3 batteries green: 44/44, 11/11, 9/9)
+
+The TODO.md cleanup backlog (from `USER-FILES/07.TEMP/260905_143717_cleanup_report.md`)
+executed end-to-end. All 17 tasks checked off in TODO.md. `compileall` clean; 32 files /
+3,523 lines (was 33 / 3,595); largest file `md_input_parser.py` 237 (soft limit 250);
+0 print()/TODO/FIXME in src/; unused-import scan clean.
+
+### Changes landed (grouped)
+- **Dead config writes gone**: `_apply_prompt_suffix` (12 lines) + the `fields_to_remove`
+  copy deleted from `profile_manager.py`; `SKIPPED_KEYS` now
+  `{"metadata", "enabled", "min_prompt_tokens"}` (`min_prompt_tokens` stays — read at
+  api_client.py:104).
+- **Metadata plumbing gone**: `base_orchestrator.setup_processing` returns None (logging
+  kept); `generate_processing_reports` lost its `metadata` param at both class levels
+  (abstract signature synced); the two dead `metadata` dict writes deleted from
+  `process_all_md_files`.
+- **Honest stats**: `_process_single_file` now returns `Optional[float]` cost — `None`
+  means skipped (checkboxes present, none checked → raw MD copied through);
+  `process_batch` increments `stats["skipped"]` for None and `stats["processed"]` +
+  `total_cost` otherwise; `stats["results"]` key deleted. `cli_handler.py:69` and
+  `reporting.generate_summary` now report a real skipped count (was frozen at 0).
+- **`data_models.py` deleted** (26 lines): `ProcessingResult` and `UsageData` had zero
+  readers after the cost-return refactor; file removed, import dropped.
+- **`calculate_cost`** lost its unused `model` param (`dry_run_estimator.py` caller synced).
+- **`reporting.py`** dropped the mislabeled "Total API Calls" line (duplicated
+  "Files Processed"); the avg-time line stays.
+- **Dependency**: `pandas` removed from requirements.txt + run.py check (zero imports).
+- **File deletions**: `scripts/generate_profiles.py` (205 lines — read nonexistent
+  models.yaml, wrote deleted batch_mode), `PROFILE_GUIDE.md` (275 lines — batch-era docs).
+  Rollback: `git checkout -- <path>`.
+- **Housekeeping**: `src/__pycache__` swept (12 pyc files from Phase-2-deleted modules).
+
+### Verification
+- `venv/bin/python tests/{offline,failure,feature}_battery.py` → 44/44, 11/11, 9/9
+- `compileall` clean; unused-import AST scan clean; 0 print()/TODO/FIXME
+- Smoke: `--list-profiles`, `--cost-only` (9 files, $0.1057), `--dry-run`
+  ("Processed: 0 | Skipped: 0") all exit 0
+- Skipped-counter behavior verified offline (fake ParsedMdInput, all-unchecked →
+  `skipped=1, processed=0, total_cost=0`, copy invoked)
+
+### Notes for future sessions
+- Live single-pass run with a real key remains the gate before any commit (unchanged).
+- `TODO.md` left populated with the checked-off cleanup tasks (this session's instruction;
+  wipe to 0 bytes only when the owner says so — repo discipline would normally wipe at
+  session end).
+
+### Git state
+Uncommitted: this cleanup batch (7 modified src/ files: base_orchestrator,
+config_validator, cost_calculator, dry_run_estimator, multi_angle_orchestrator,
+profile_manager, reporting; deleted src/data_models.py; requirements.txt, run.py;
+deleted scripts/generate_profiles.py + PROFILE_GUIDE.md; AGENTS.md; TODO.md), stacked
+on the still-uncommitted 2026-09-05 refactor batch. Commit awaits the owner's go.
+
+---
+
+## Last Session Summary (2026-09-05) — Systematic Cleanup Analysis
+
+### Work done — ✅ COMPLETE (analysis only, no src/ changes)
+
+Systematic cleanup scan of `src/` (33 files), `tests/` (3 batteries), root tooling, and all
+config assets. Full report:
+`USER-FILES/07.TEMP/260905_143717_cleanup_report.md` (07.TEMP is gitignored — the actionable
+items are recorded below; TODO.md wiped to 0 bytes at session end per repo discipline).
+
+### Findings — the natural backlog for the next session (schedule in TODO.md)
+1. **Dead config writes** (`profile_manager.py`): `_apply_prompt_suffix` (162-173) and the
+   `fields_to_remove` block (192-193) copy profile keys into merged config that nothing reads;
+   no profile supplies either key. Drop them plus the `prompt_suffix`/`fields_to_remove`
+   entries in `config_validator.py:84` `SKIPPED_KEYS`.
+2. **Dead metadata plumbing**: `multi_angle_orchestrator.py` `generate_processing_reports`
+   takes `metadata` and never uses it (132) — fed by dead dict writes at 174/187 and
+   `base_orchestrator.setup_processing`'s return value (34-38); abstract signature 72-74.
+3. **Vestigial stats**: `stats["results"]` written never read; `stats["skipped"]` initialised,
+   never incremented (the all-checkboxes-unchecked passthrough logs "Skipping" yet bumps
+   `processed`), reported frozen at 0 by `cli_handler.py:69`. Decide increment vs delete.
+4. **Unread dataclass fields**: `ProcessingResult` only `.cost` is read (`filename`,
+   `output_path`, `usage` never consumed); `UsageData.filename`/`.model` set never read.
+5. **Unused param**: `cost_calculator.calculate_cost(..., model)` — body never uses `model`;
+   sole caller `dry_run_estimator.py:87`.
+6. **Unused dependency**: `pandas` in requirements.txt + `run.py` check — zero imports in
+   src/ or tests/.
+7. **Stale tooling/docs**: `scripts/generate_profiles.py` (reads nonexistent
+   `01.CONFIG/models.yaml`, writes deleted `batch_mode`); `PROFILE_GUIDE.md` (documents the
+   deleted batch path end-to-end).
+8. **Reporting label**: `reporting.py:95` says "Total API Calls" but prints
+   `stats['processed']` (files). Relabel.
+9. **Housekeeping**: `src/__pycache__` holds 12 pyc files from modules deleted in Phase 2
+   (angle_loader, 7 batch_*, plan_output_writer, shot_feasibility, subject_binding, banned_words
+   conflicted copy) — `rm -rf src/__pycache__` once.
+
+### Verified clean — do NOT schedule as backlog
+- 0 print()/TODO/FIXME/commented-out code blocks in src/; batteries' print() is allowed.
+- Only env var consumed: `OPENROUTER_API_KEY` (auth.py 4-tier hierarchy) — no unused env vars.
+- `openrouter_config.yaml`: all keys have read sites (max_retries → planner,
+  timeout → client timeout_ms, avg_output_tokens → estimator, cache_config → gate).
+- Zero exact-duplicate 5-line windows across src/ (fences.py adoption eliminated the last 3).
+- No unreachable branches; no file <5 lines of actual code (smallest four all actively read).
+- INFORMATIONAL ONLY (no action): 02.STANDBY's 24 profiles still carry deleted batch keys
+  (218 refs); profile `capabilities.supports_thinking` carried but never read.
+
+### Git state
+Uncommitted: AGENTS.md (this entry) — working tree otherwise unchanged this session. The
+2026-09-05 refactor batch (31 modified src/, 2 new modules, 3 config/docs, 2 batteries) is
+still awaiting the owner's go. Live single-pass run with a real key remains the gate before
+any commit.
+
+---
+
+## Last Session Summary (2026-09-05) — Refactor Backlog Executed: All 40 Tasks
+
+### Work done — ✅ COMPLETE (all 3 batteries green: 44/44, 11/11, 9/9)
+
+The full TODO.md refactor backlog (generated from
+`USER-FILES/07.TEMP/260905_112717_refactor_report.md`) executed in one pass. All 40 tasks
+checked off in TODO.md. `compileall` clean; every `src/*.py` ≤ 250 lines (was: shot_planner 248
+at the soft limit); 0 print()/TODO/FIXME in src/; unused-import scan clean.
+
+### New modules (2)
+- `fences.py` (57) — shared `extract_fenced_block()` (find fence marker → collect block →
+  yaml.safe_load → ValueError on malformed, returns parsed data + inclusive line range) and
+  `strip_outer_fences()`. Adopted by `assets.py`, `shot_sheet.py`, `shot_plan.py` (3 copies
+  deleted) and by `shot_planner._clean_json_text` (WARN-on-fence behavior unchanged).
+- `shot_plan_spec.py` (114) — PLAN_SYSTEM_PROMPT / PLAN_INSTRUCTION / PLAN_RETRY_NOTE /
+  SHOT_SHEET_SCHEMA / RESPONSE_FORMAT moved out of `shot_planner.py` (248 → 159 lines).
+
+### High-priority fixes landed
+- **Single config validator**: `config.py:_validate_required_fields` deleted; `validate_all`
+  is the one required-key authority (was: two copies validating every startup).
+- **Dead required keys gone**: `stream` and `processing_options.*` removed from the validator
+  required sets, `FIELD_EXAMPLES`, the error-report template, and `openrouter_config.yaml`.
+  `retry_config.timeout` (seconds) is now READ — it is the client `timeout_ms` source in
+  `BaseOrchestrator._initialize_api_client` (previously no client timeout at all).
+- **Parse-once**: `run_preflight` returns a `PreflightReport` carrying
+  `parsed_files: List[(Path, ParsedMdInput)]`; `process_all_md_files` logs the report and
+  threads the parsed files into `process_batch` — `parse_md_file` now runs once per file.
+- **Estimator honesty**: `dry_run_estimator` zeroes plan tokens for checked-shot files
+  (`AUTO_PLAN_SHOTS`/`SHOT_TOKEN_ESTIMATE` constants hoisted). Verified: checked file
+  estimates 1 shot × avg_output with no plan call counted.
+- **Dead API branch gone**: `_build_api_payload` no longer merges the never-set
+  `config["options"]`.
+
+### Structure refactors landed
+- `parse_md_file` 117 lines/CC~27 → 81 lines/CC~13 shell over `_collect_images`,
+  `_collect_scene`, `_collect_checkbox_sections`; `shot_entries_from_list` split into
+  `_check_shot_id`/`_resolve_subject_ids`/`_resolve_grounds`/`_resolve_shot_type`/`_entry_from_item`
+  (CC 17 → ≤3 each, all error strings byte-identical); `_parse_plan` split into
+  `_check_subject_assets`/`_check_mandatory_coverage`/`_check_banned_intents`.
+- `checkbox_validator` consumes `md_input_parser._parse_checkbox_line` (re-parse deleted) and
+  imports `SHOT_ID_PATTERN` from `shot_plan` (duplicate constant deleted).
+- `shot_generator`: `GenerationContext` + `ShotOutputs` dataclasses; `_call_shot` and
+  `_call_with_retry` module-level (per-iteration closure gone); `generate_shots` 6 params → 4.
+  `save_angle_outputs` 6 params → 4 (takes `ShotOutputs`).
+- `build_user_content` lost the dead `shot_sheet` param (7 → 6, all keyword-friendly);
+  `ParsedMdInput.shot_sheet_text` field deleted; `extract_shot_sheet` returns the sheet only.
+- `_empty_stats()` helper replaces the duplicated 9-line stats dict; `stats["failed"]`/
+  `stats["errors"]` keys deleted everywhere (failures raise → exit 1; `cli_handler` and
+  `generate_summary` updated).
+- `MultiAngleOrchestrator._resolve_shots_to_run()` extracted from `_process_single_file`
+  (41 lines, CC~3); `process_batch` takes parsed files; `setup_processing` reduced to the
+  dry-run helper it actually is and calls `self.setup_logging` (duplicate wrapper gone).
+- `reporting.generate_summary` 5 params → `RunSummary` dataclass; COST.md reference line
+  deleted; profile name lookup fixed (`profile_name`, no more "Name: Unknown"); Failed/Errors
+  lines removed.
+
+### Low-priority sweep landed
+Unused imports (`main.py`, `shot_plan.py`, `shot_sheet.py`); dead params
+(`get_model_display_name`, `validate_all`); pointless YAML re-raise in `validate_yaml_file`
+(now returns the documented error triple); `get_output_directory` temp dance; dead local in
+`list_available_profiles`; `prompt_suffix_options` write; `APIAuthenticationError`;
+`ProcessingResult.success/error`; `ConfigReporter.__init__` (module-level `_EXAMPLE_VALUES`);
+selftest uses `payload_builder._image_part`; stale `--plan` docstring in `__init__.py`;
+unreachable `if not md_files` in `main.py`; `--profile` now resolves with or without `.yaml`
+(matches `load_profile`).
+
+### Test batteries updated (interfaces changed, behavior pins kept)
+- `tests/failure_battery.py`: fake `run_preflight` now returns a real `PreflightReport` with
+  parsed files; orchestrator configs carry `"timeout": 600` (client timeout reads it);
+  `run_generator` drives `GenerationContext` + `ShotOutputs`.
+- `tests/feature_battery.py`: same fake-preflight + timeout updates; all 9 retry-contract
+  checks unchanged and green.
+
+### Verification
+- `venv/bin/python tests/{offline,failure,feature}_battery.py` → 44/44, 11/11, 9/9
+- `venv/bin/python -m src.main --list-profiles` / `--cost-only` (9 files, $0.1057) /
+  `--dry-run` → exit 0; dry-run summary now shows the real profile name, no COST.md line
+- `parse_md_file` is the only public function still >10 CC (~13 — a deliberate section-guard
+  shell; further splitting would scatter one cohesive flow)
+- Live API run NOT performed this session (no `OPENROUTER_API_KEY` in env at test time) —
+  the batteries are offline; a live single-pass run is the natural next-session gate before
+  committing.
+
+### Git state
+Uncommitted on `master`: 31 modified `src/` files + 2 new modules, 3 modified config/docs
+files (`openrouter_config.yaml`, `TODO.md`, `AGENTS.md`), 2 modified test batteries. Commit
+awaits the owner's go per repo discipline. `USER-FILES/05.OUTPUT/` gained cost-estimate +
+dry-run report dirs from this session's smoke tests (the 04.INPUT sha256s are untouched).
+
+### Session close-out (2026-09-05, end of refactoring pass)
+- TODO.md wiped to 0 bytes per repo discipline — all 40 backlog tasks were executed, verified,
+  and are recorded above; this summary is the standing reference.
+- Re-verified at wipe time: 44/44, 11/11, 9/9; compileall clean; all `src/*.py` ≤ 250 lines;
+  no `processing_options`/`stream`/`prompt_suffix_options`/`shot_sheet_text`/
+  `APIAuthenticationError`/`stats["failed"]` leftovers anywhere in src/.
+- Remaining known items for future sessions (NOT bugs, do not schedule as refactor backlog):
+  `parse_md_file` ~13 CC and `preflight._check_groundings` ~11 CC (deliberate sequential
+  guard flows); `--cost-only` still excludes image input tokens (warning printed); batteries
+  are offline — a live single-pass run with a real key is the gate before any commit.
+
+---
+
+## Last Session Summary (2026-09-05) — Refactor Analysis + TODO Wipe
+
+### Work done — ✅ COMPLETE
+Systematic refactor analysis of `src/` (33 files, 3,596 lines) + `tests/` (3 batteries, 950 lines).
+Full report: `USER-FILES/07.TEMP/260905_112717_refactor_report.md` (07.TEMP is gitignored). TODO.md
+wiped to 0 bytes per repo discipline — all documentation lives in AGENTS.md. No src/ changes were
+made this session (analysis only). Working tree clean apart from this AGENTS.md edit.
+
+### Report highlights — the items the next session should schedule
+- **High**: duplicated required-config validation (`config.py:_validate_required_fields` vs
+  `config_validator.FieldValidator` — both run every startup); no client `timeout_ms` on the
+  OpenRouter client (`retry_config.timeout` is required but unread — natural wire point);
+  `parse_md_file` runs twice per file (preflight + orchestrator); `--cost-only` counts a plan
+  call for checked-shot files that never make one (`dry_run_estimator.py:53-57`);
+  `stream`/`processing_options.*` remain mandatory dead weight in every profile.
+- **Medium**: `parse_md_file` 117 lines / CC ~27 — split candidate; fence-extraction duplicated
+  3× (`assets.py`, `shot_sheet.py`, `shot_plan.py`) → shared helper; checkbox parsing duplicated
+  (`checkbox_validator` re-implements `md_input_parser._parse_checkbox_line`); duplicate
+  `SHOT_ID_PATTERN`; duplicate 9-line stats dict in `multi_angle_orchestrator.py` (34-42 / 155-163);
+  `build_user_content` 7 params incl. dead `shot_sheet` param; `shot_planner.py` at 248 lines
+  (2 under the soft limit — split before the next planner edit).
+- **Dead code**: unused imports (`main.py:12 short_name`, `shot_plan.py:12 logger`,
+  `shot_sheet.py:8,10 Any+logger`); unused params (`get_model_display_name` model_name,
+  `validate_all` config_source/profile_source); unreachable `if not md_files` (`main.py:158`);
+  `APIAuthenticationError` never raised; `PreflightReport` return value discarded;
+  `ProcessingResult.success/error` vestigial; stale `--plan` mention in `src/__init__.py`
+  docstring; `prompt_suffix_options` written but never read.
+- **Explicitly NOT flagged** (deliberate design, do not "clean up"): retry-billed usage
+  accumulation, `RuntimeError` vs `PlanRejected` split, `_FAILED` residue policy, coverage gate,
+  boilerplate-regex negative control "maintaining her grip on the rope".
+
+### Git state
+Uncommitted: `AGENTS.md` (this entry) + untracked `USER-FILES/07.TEMP/260905_112717_refactor_report.md`
+(07.TEMP gitignored). `src/` untouched. Commit awaits the owner's go per repo discipline.
+
+### Still open — unchanged, all re-verified true this session
+- The 2026-09-04 "Still open" list stands: `shot_planner.py` 248-line split candidate;
+  `retry_config.timeout`/`stream`/`processing_options.*` required but unread; no client timeout;
+  `reporting.py:73` COST.md reference (nothing writes it); `reporting.py:88` "Name: Unknown";
+  `stats["failed"]`/`stats["errors"]` vestigial; preflight failures surface as raw tracebacks.
+- The refactor report's High/Medium items above are the natural backlog for the next session;
+  schedule them in TODO.md (deliberately left blank at session end per the owner's instruction).
+
+---
+
 ## Last Session Summary (2026-09-04) — Shot-Planner Retry That Actually Corrects Itself
 
 ### Feature Implementation — ✅ COMPLETE (verified live)

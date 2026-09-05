@@ -1,10 +1,11 @@
 """Output saver for multi-angle reframing feature."""
 
 from pathlib import Path
-from typing import Dict, List
+from typing import List
 from loguru import logger
 
 from .reporting import short_name
+from .shot_generator import ShotOutputs
 
 
 def copy_raw_md_file(input_path: Path, output_dir: Path) -> Path:
@@ -34,10 +35,8 @@ def _slug(label: str) -> str:
 def save_angle_outputs(
     output_dir: Path,
     input_name: str,
-    angle_results: Dict[str, str],
+    outputs: ShotOutputs,
     dataset_b: str,
-    grounds_by_angle: Dict[str, List[str]],
-    labels_by_shot: Dict[str, str],
 ) -> List[Path]:
     """Save all shot outputs for one input file.
 
@@ -50,10 +49,8 @@ def save_angle_outputs(
     Args:
         output_dir: Base output directory
         input_name: Input filename without extension
-        angle_results: Dict mapping shot_id -> reframing_prompt (Dataset F)
+        outputs: ShotOutputs (prompts, grounds, labels) from generate_shots
         dataset_b: Original image URL
-        grounds_by_angle: Dict mapping shot_id -> grounding ref URLs
-        labels_by_shot: Dict mapping shot_id -> shot label (for filenames)
 
     Returns:
         List of saved file paths
@@ -66,17 +63,17 @@ def save_angle_outputs(
     sub_dir.mkdir(parents=True, exist_ok=True)
 
     saved = []
-    for shot_id, prompt_f in angle_results.items():
-        if shot_id not in grounds_by_angle or shot_id not in labels_by_shot:
+    for shot_id, prompt_f in outputs.prompts.items():
+        if shot_id not in outputs.grounds_by_shot or shot_id not in outputs.labels_by_shot:
             raise KeyError(f"no grounding/label entry for result '{shot_id}'")
         ref_images = "\n\n".join(
-            f"![image]({url})" for url in grounds_by_angle[shot_id]
+            f"![image]({url})" for url in outputs.grounds_by_shot[shot_id]
         )
         content = f"{prompt_f}\n\n![image]({dataset_b})"
         if ref_images:
             content += f"\n\n{ref_images}"
         content += "\n"
-        slug = _slug(labels_by_shot[shot_id])
+        slug = _slug(outputs.labels_by_shot[shot_id])
         filename = f"{input_name}_{shot_id}_{slug}.md" if slug else f"{input_name}_{shot_id}.md"
         output_path = sub_dir / filename
         output_path.write_text(content, encoding="utf-8")

@@ -43,7 +43,7 @@ class YamlValidator:
             return True, data, None
 
         except yaml.YAMLError as e:
-            raise
+            return False, None, f"YAML syntax error in {file_path}: {e}"
 
 
 class ConflictChecker:
@@ -77,12 +77,11 @@ class FieldValidator:
     """Validates required fields in configuration."""
 
     REQUIRED_BASE_CONFIG = {
-        "model", "max_tokens", "temperature", "stream",
-        "processing_options", "retry_config", "avg_output_tokens"
+        "model", "max_tokens", "temperature",
+        "retry_config", "avg_output_tokens"
     }
-    REQUIRED_PROCESSING_OPTIONS = {"trim_prompts", "normalize_spaces", "max_prompt_length", "include_filename"}
     REQUIRED_RETRY_CONFIG = {"max_retries", "timeout"}
-    SKIPPED_KEYS = {"metadata", "enabled", "prompt_suffix", "fields_to_remove", "min_prompt_tokens"}
+    SKIPPED_KEYS = {"metadata", "enabled", "min_prompt_tokens"}
 
     def validate_required_fields(self, config: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Validate that all required fields are present.
@@ -95,7 +94,6 @@ class FieldValidator:
         """
         missing_fields = []
         missing_fields.extend(self._validate_section(config, self.REQUIRED_BASE_CONFIG))
-        missing_fields.extend(self._validate_nested(config, "processing_options", self.REQUIRED_PROCESSING_OPTIONS))
         missing_fields.extend(self._validate_nested(config, "retry_config", self.REQUIRED_RETRY_CONFIG))
         missing_fields.extend(self._validate_cache_config(config))
 
@@ -186,9 +184,7 @@ class ConfigurationValidator:
 
         return len(missing_paths) == 0, missing_paths
 
-    def validate_all(self, config: Dict[str, Any],
-                    config_source: Path,
-                    profile_source: Optional[Path] = None) -> Tuple[bool, List[str]]:
+    def validate_all(self, config: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Perform comprehensive validation of all configuration."""
         errors = []
 

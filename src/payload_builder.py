@@ -46,14 +46,13 @@ def build_user_content(
     original_image: str,
     ref_images: List[Union[str, Asset]],
     angle_text: str,
-    shot_sheet: Optional[str] = None,
     cache_breakpoint: bool = False,
     cache_ttl: Optional[str] = None,
 ) -> List[Dict[str, object]]:
     """Return an ordered list of content parts for the user message.
 
     Order (stable across all angles of one file, then the variable part):
-    1. text      — scene description (and shot sheet, when present)
+    1. text      — scene description
     2. image_url — the original image, detail "original"
     3. image_url — each grounding reference, in order, detail "original"
     4. text      — marker lines naming each image in order (the cache breakpoint)
@@ -63,9 +62,7 @@ def build_user_content(
     objects (per-shot grounding, phase_1 §1.4). The image-count invariant
     compares against whatever list it was handed.
     """
-    scene_text = f"{scene}\n\n{shot_sheet}" if shot_sheet else scene
-
-    parts: List[Dict[str, object]] = [{"type": "text", "text": scene_text}]
+    parts: List[Dict[str, object]] = [{"type": "text", "text": scene}]
     parts.append(_image_part(original_image))
     for ref in ref_images:
         parts.append(_image_part(_ref_url(ref)))

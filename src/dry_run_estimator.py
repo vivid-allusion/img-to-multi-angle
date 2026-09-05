@@ -7,7 +7,10 @@ from loguru import logger
 
 from .dry_run_report_formatter import DryRunReportFormatter
 from .md_input_parser import parse_md_file
-from .shot_planner import PLAN_INSTRUCTION
+from .shot_plan_spec import PLAN_INSTRUCTION
+
+AUTO_PLAN_SHOTS = 6
+SHOT_TOKEN_ESTIMATE = 25
 
 
 class DryRunEstimator:
@@ -27,6 +30,10 @@ class DryRunEstimator:
         """
         parsed = parse_md_file(md_path)
 
+        if "avg_output_tokens" not in self.config:
+            raise ValueError("Missing 'avg_output_tokens' in configuration")
+        avg_output = self.config["avg_output_tokens"]
+
         if parsed.checked_shots and parsed.shot_entries:
             entries_by_id = {e.id: e for e in parsed.shot_entries}
             shots = []
@@ -39,19 +46,16 @@ class DryRunEstimator:
                 shots.append(entry)
             num_shots = len(shots)
             shot_tokens = sum((len(e.label) + len(e.intent)) // 4 for e in shots)
+            plan_input = 0
+            plan_output = 0
         else:
-            num_shots = 6
-            shot_tokens = 6 * 25
+            num_shots = AUTO_PLAN_SHOTS
+            shot_tokens = AUTO_PLAN_SHOTS * SHOT_TOKEN_ESTIMATE
+            plan_input = len(PLAN_INSTRUCTION) // 4
+            plan_output = avg_output
 
         system_tokens = len(self.config.get("system_prompt", "")) // 4
         scene_tokens = len(parsed.scene) // 4
-
-        if "avg_output_tokens" not in self.config:
-            raise ValueError("Missing 'avg_output_tokens' in configuration")
-        avg_output = self.config["avg_output_tokens"]
-
-        plan_input = len(PLAN_INSTRUCTION) // 4
-        plan_output = avg_output
 
         total_input = system_tokens + scene_tokens + shot_tokens + plan_input
         total_output = avg_output * num_shots + plan_output
@@ -80,7 +84,7 @@ class DryRunEstimator:
                 usage_data = self.estimate_md_file_cost(md_file)
                 from .cost_calculator import calculate_cost
 
-                cost = calculate_cost(usage_data, self.config, self.config["model"])
+                cost = calculate_cost(usage_data, self.config)
 
                 results["file_estimates"].append(
                     {

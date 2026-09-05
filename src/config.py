@@ -3,6 +3,7 @@
 
 from pathlib import Path
 from typing import Dict, Any, Optional
+from datetime import datetime
 import sys
 from loguru import logger
 
@@ -51,34 +52,6 @@ def _load_system_prompt(config: Dict[str, Any], base_path: Path) -> None:
         raise FileNotFoundError("No system prompt configuration found in USER-FILES/01.CONFIG/")
 
 
-def _validate_required_fields(config: Dict[str, Any]) -> None:
-    """Validate all required configuration fields are present."""
-    # Validate ALL required configuration - NO DEFAULTS
-    required_fields = ["model", "max_tokens", "temperature", "stream"]
-    missing = [f for f in required_fields if f not in config]
-    if missing:
-        logger.error(f"Missing required configuration fields: {missing}")
-        logger.error("All settings must be explicitly defined in USER-FILES/01.CONFIG/ or USER-FILES/03.PROFILES/")
-        raise ValueError(f"Incomplete configuration: missing {missing}")
-
-    # Check for required processing options
-    if "processing_options" not in config:
-        logger.error("Missing 'processing_options' in configuration")
-        raise ValueError("Missing 'processing_options' - must be defined in USER-FILES/01.CONFIG/openrouter_config.yaml")
-
-    # Validate processing_options has all required fields
-    required_processing = ["trim_prompts", "normalize_spaces", "max_prompt_length", "include_filename"]
-    missing_processing = [f for f in required_processing if f not in config["processing_options"]]
-    if missing_processing:
-        logger.error(f"Missing required processing_options fields: {missing_processing}")
-        raise ValueError(f"Incomplete processing_options configuration: missing {missing_processing}")
-
-    # Check for stream configuration
-    if "stream" not in config:
-        logger.error("Missing 'stream' configuration")
-        raise ValueError("Missing 'stream' setting - must be defined in configuration")
-
-
 def load_strict_config(profile_name: Optional[str] = None) -> Dict[str, Any]:
     """
     Load and validate all configuration sources with NO DEFAULTS policy.
@@ -114,12 +87,8 @@ def load_strict_config(profile_name: Optional[str] = None) -> Dict[str, Any]:
     # Load system prompt
     _load_system_prompt(config, base_path)
 
-    # Validate required fields
-    _validate_required_fields(config)
-
     # Final validation of merged configuration
-    api_config_path = base_path / "01.CONFIG" / "openrouter_config.yaml"
-    is_valid, errors = validator.validate_all(config, api_config_path)
+    is_valid, errors = validator.validate_all(config)
     if not is_valid:
         error_report = validator.generate_error_report(errors)
         logger.error(error_report)
@@ -128,23 +97,22 @@ def load_strict_config(profile_name: Optional[str] = None) -> Dict[str, Any]:
     return config
 
 
-def get_model_display_name(model_name: str, config: Optional[Dict[str, Any]] = None) -> str:
+def get_model_display_name(config: Dict[str, Any]) -> str:
     """
     Get the display name for a model.
-    
+
     Args:
-        model_name: Full model name/ID
         config: Config dict containing model_nickname (required)
-        
+
     Returns:
         Display name (nickname) for the model
-        
+
     Raises:
         ValueError: If model_nickname not in config
     """
-    if config and "model_nickname" in config:
+    if "model_nickname" in config:
         return config["model_nickname"]
-    
+
     logger.error("model_nickname not found in config - profile must define model.nickname")
     raise ValueError("Missing model_nickname in configuration")
 
@@ -163,24 +131,17 @@ def get_output_directory(config: Optional[Dict[str, Any]] = None, suffix: str = 
     Returns:
         Path to the output directory
     """
-    from datetime import datetime
-
     timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
 
     dir_parts = [timestamp]
 
     if config:
         if "model" in config:
-            model_name = config["model"]
-            display_name = get_model_display_name(model_name, config)
-            dir_parts.append(display_name)
+            dir_parts.append(get_model_display_name(config))
 
         dir_parts.append("RT")
 
-        temp_value = None
-        if "temperature" in config:
-            temp_value = config["temperature"]
-
+        temp_value = config.get("temperature")
         if temp_value is not None:
             dir_parts.append(f"temp{temp_value}")
 

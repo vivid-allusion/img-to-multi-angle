@@ -9,7 +9,7 @@ from .config import load_strict_config, get_output_directory
 from .cli_handler import CLIHandler
 from .md_input_parser import discover_md_files
 from .exceptions import ConfigurationError, FileProcessingError
-from .reporting import setup_cli_logging, short_name
+from .reporting import setup_cli_logging
 
 
 def parse_arguments():
@@ -63,12 +63,13 @@ def validate_profile_selection(args):
         sys.exit(1)
 
     if args.profile:
-        profile_path = profiles_dir / args.profile
+        profile_name = args.profile if args.profile.endswith(".yaml") else f"{args.profile}.yaml"
+        profile_path = profiles_dir / profile_name
         if not profile_path.exists():
-            logger.error(f"Profile not found: {args.profile}")
+            logger.error(f"Profile not found: {profile_name}")
             logger.info(f"Available profiles: {', '.join(p.name for p in yaml_files)}")
             sys.exit(1)
-        return args.profile
+        return profile_name
 
     if len(yaml_files) == 1:
         return yaml_files[0].name
@@ -154,9 +155,6 @@ def main():
         _maybe_run_selftest(config)
 
     md_files, input_dir = discover_mds(args)
-    if not md_files:
-        logger.warning(f"No MD files found in {args.input_dir or 'USER-FILES/04.INPUT/'}")
-        return
 
     output_dir = get_output_directory(config, suffix="MULTI-ANGLE-MD")
     handler = CLIHandler(config)

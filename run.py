@@ -19,7 +19,6 @@ def check_dependencies() -> bool:
         ("openrouter", "openrouter"),
         ("yaml", "pyyaml"),
         ("loguru", "loguru"),
-        ("pandas", "pandas"),
         ("natsort", "natsort"),
     ]
     

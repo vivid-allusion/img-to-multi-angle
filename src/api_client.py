@@ -41,11 +41,6 @@ def _build_api_payload(
     if response_format:
         api_payload["response_format"] = response_format
 
-    if "options" in config:
-        for key, value in config["options"].items():
-            if key not in api_payload:
-                api_payload[key] = value
-
     return api_payload
 
 
@@ -77,6 +72,7 @@ def _extract_usage_data(response) -> Dict[str, Any]:
 
 def process_text(
     user_content: List[Dict[str, Any]],
+    *,
     client: OpenRouter,
     config: Dict[str, Any],
     system_prompt: Optional[str] = None,
@@ -95,32 +91,26 @@ def process_text(
     system_message = _build_system_message(system)
     api_payload = _build_api_payload(user_content, config, system_message, response_format)
 
-    try:
-        response = client.chat.send(**api_payload)
+    response = client.chat.send(**api_payload)
 
-        response_text = extract_response_text(response)
-        usage_data = _extract_usage_data(response)
+    response_text = extract_response_text(response)
+    usage_data = _extract_usage_data(response)
 
-        if not response_text.strip():
-            raise RuntimeError("API returned empty response text — aborting run")
+    if not response_text.strip():
+        raise RuntimeError("API returned empty response text — aborting run")
 
-        prompt_tokens = usage_data.get("input_tokens", 0)
-        if not skip_token_floor:
-            floor = config.get("min_prompt_tokens")
-            if floor is None:
-                logger.warning(
-                    "min_prompt_tokens is not set — token floor check skipped. "
-                    "Set it to ~50% of the observed prompt_tokens after the first live run."
-                )
-            elif prompt_tokens < floor:
-                raise RuntimeError(
-                    f"prompt_tokens ({prompt_tokens}) below min_prompt_tokens floor ({floor}) — "
-                    "payload regression suspected, aborting run"
-                )
-
-    except Exception as e:
-        error_type = type(e).__name__
-        logger.error(f"API error ({error_type}): {e}")
-        raise
+    prompt_tokens = usage_data.get("input_tokens", 0)
+    if not skip_token_floor:
+        floor = config.get("min_prompt_tokens")
+        if floor is None:
+            logger.warning(
+                "min_prompt_tokens is not set — token floor check skipped. "
+                "Set it to ~50% of the observed prompt_tokens after the first live run."
+            )
+        elif prompt_tokens < floor:
+            raise RuntimeError(
+                f"prompt_tokens ({prompt_tokens}) below min_prompt_tokens floor ({floor}) — "
+                "payload regression suspected, aborting run"
+            )
 
     return response_text, usage_data

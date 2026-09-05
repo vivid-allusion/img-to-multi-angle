@@ -41,7 +41,7 @@ def _calculate_cache_costs(usage_data: Dict[str, Any], model_pricing: Dict) -> f
     return cost
 
 
-def calculate_cost(usage_data: Dict[str, Any], config: Dict[str, Any], model: str) -> float:
+def calculate_cost(usage_data: Dict[str, Any], config: Dict[str, Any]) -> float:
     """Calculate cost for a single API call based on usage and pricing."""
     if 'pricing' not in config:
         return 0.0

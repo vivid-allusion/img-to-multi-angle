@@ -9,6 +9,7 @@ from typing import Any, Dict
 from openrouter import OpenRouter
 from loguru import logger
 
+from .payload_builder import _image_part
 from .response_utils import extract_response_text
 
 SELFTEST_IMAGE_PATH = Path("USER-FILES/01.CONFIG/selftest/orientation_test.png")
@@ -30,10 +31,7 @@ def run_selftest(client: OpenRouter, config: Dict[str, Any]) -> None:
     encoded = base64.b64encode(SELFTEST_IMAGE_PATH.read_bytes()).decode("ascii")
 
     content = [
-        {
-            "type": "image_url",
-            "image_url": {"url": f"data:image/png;base64,{encoded}", "detail": "original"},
-        },
+        _image_part(f"data:image/png;base64,{encoded}"),
         {"type": "text", "text": SELFTEST_QUESTION},
     ]
 

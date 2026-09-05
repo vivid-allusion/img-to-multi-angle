@@ -66,7 +66,7 @@ class ProcessCommand:
         logger.info("")
         logger.info("=" * 50)
         logger.info("Processing complete!")
-        logger.info(f"Processed: {stats['processed']} | Failed: {stats['failed']} | Skipped: {stats.get('skipped', 0)} | Total Cost: ${stats.get('total_cost', 0.0):.4f}")
+        logger.info(f"Processed: {stats['processed']} | Skipped: {stats.get('skipped', 0)} | Total Cost: ${stats.get('total_cost', 0.0):.4f}")
 
 
 class CLIHandler:

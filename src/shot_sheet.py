@@ -5,10 +5,9 @@ The shot sheet holds scene subject definitions and asset bindings.
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional
 
-from loguru import logger
-import yaml
+from .fences import extract_fenced_block
 
 SHOT_SHEET_FENCE = "```yaml shot-sheet"
 
@@ -52,32 +51,14 @@ class ShotSheet:
     notes: str = ""
 
 
-def extract_shot_sheet(content: str, filename: str) -> Tuple[Optional[ShotSheet], Optional[str]]:
+def extract_shot_sheet(content: str, filename: str) -> Optional[ShotSheet]:
     """Extract the ```yaml shot-sheet fenced block, if present.
 
-    Absent block → (None, None). Present but malformed → ValueError (fail fast).
+    Absent block → None. Present but malformed → ValueError (fail fast).
     """
-    lines = content.splitlines()
-    fence_idx = None
-    for i, line in enumerate(lines):
-        if line.strip() == SHOT_SHEET_FENCE:
-            fence_idx = i
-            break
-
-    if fence_idx is None:
-        return None, None
-
-    block_lines = []
-    for line in lines[fence_idx + 1:]:
-        if line.strip() == "```":
-            break
-        block_lines.append(line)
-
-    block_text = "\n".join(block_lines)
-    try:
-        data = yaml.safe_load(block_text)
-    except yaml.YAMLError as e:
-        raise ValueError(f"{filename}: malformed shot-sheet block: {e}") from e
+    data, _ = extract_fenced_block(content, SHOT_SHEET_FENCE, filename, "shot-sheet")
+    if data is None:
+        return None
 
     if not isinstance(data, dict):
         raise ValueError(f"{filename}: shot-sheet block must be a YAML mapping")
@@ -87,7 +68,7 @@ def extract_shot_sheet(content: str, filename: str) -> Tuple[Optional[ShotSheet]
     except (KeyError, TypeError, ValueError) as e:
         raise ValueError(f"{filename}: invalid shot-sheet block: {e}") from e
 
-    return sheet, block_text
+    return sheet
 
 
 def shot_sheet_from_dict(data: dict) -> ShotSheet:

@@ -9,8 +9,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional, Set
 
-from loguru import logger
-import yaml
+from .fences import extract_fenced_block
 
 SHOT_PLAN_FENCE = "```yaml shot-plan"
 
@@ -46,6 +45,84 @@ class ShotEntry:
     reason: str = ""
 
 
+@dataclass
+class _ShotPlanContext:
+    """Validation context threaded through the per-item checks."""
+
+    filename: str
+    roster: Optional[Set[str]]
+    declared_assets: Optional[Set[str]]
+
+
+def _check_shot_id(item: dict, filename: str, seen: Set[str]) -> str:
+    shot_id = str(item["id"])
+    if not SHOT_ID_PATTERN.match(shot_id):
+        raise ValueError(f"{filename}: shot id '{shot_id}' must match ^SH\\d+$")
+    if shot_id in seen:
+        raise ValueError(f"{filename}: duplicate shot id '{shot_id}'")
+    seen.add(shot_id)
+    return shot_id
+
+
+def _resolve_subject_ids(item: dict, shot_id: str, ctx: _ShotPlanContext) -> List[str]:
+    subject_ids = [str(s) for s in item.get("subject_ids", [])]
+    unknown_subjects = [s for s in subject_ids if ctx.roster is not None and s not in ctx.roster]
+    if unknown_subjects:
+        raise ValueError(
+            f"{ctx.filename}: shot {shot_id} names unknown subject id(s) "
+            f"{unknown_subjects} — roster: {sorted(ctx.roster) if ctx.roster else 'none'}"
+        )
+    return subject_ids
+
+
+def _resolve_grounds(item: dict, shot_id: str, ctx: _ShotPlanContext) -> List[str]:
+    grounds = [str(g) for g in item.get("grounds", [])]
+    if ctx.declared_assets is not None:
+        undeclared = [g for g in grounds if g not in ctx.declared_assets]
+        if undeclared:
+            raise ValueError(
+                f"{ctx.filename}: shot {shot_id} grounds on undeclared asset id(s) "
+                f"{undeclared} — declared: {sorted(ctx.declared_assets)}"
+            )
+    return grounds
+
+
+def _resolve_shot_type(item: dict, shot_id: str, filename: str) -> str:
+    shot_type = str(item.get("shot_type", "")).strip()
+    if shot_type and shot_type not in SHOT_TYPES:
+        raise ValueError(
+            f"{filename}: shot {shot_id} has unknown shot_type '{shot_type}' — "
+            f"expected one of {list(SHOT_TYPES)}"
+        )
+    return shot_type
+
+
+def _entry_from_item(item: dict, seen: Set[str], ctx: _ShotPlanContext) -> ShotEntry:
+    """Validate and build one ShotEntry from a parsed YAML item."""
+    shot_id = _check_shot_id(item, ctx.filename, seen)
+    subject_ids = _resolve_subject_ids(item, shot_id, ctx)
+    grounds = _resolve_grounds(item, shot_id, ctx)
+    shot_type = _resolve_shot_type(item, shot_id, ctx.filename)
+
+    intent = str(item["intent"]).strip()
+    label = str(item["label"]).strip()
+    if not intent:
+        raise ValueError(f"{ctx.filename}: shot {shot_id} has an empty intent")
+    if not label:
+        raise ValueError(f"{ctx.filename}: shot {shot_id} has an empty label")
+
+    return ShotEntry(
+        id=shot_id,
+        label=label,
+        intent=intent,
+        shot_type=shot_type,
+        subject_ids=subject_ids,
+        grounds=grounds,
+        recommended=bool(item.get("recommended", True)),
+        reason=str(item.get("reason", "")),
+    )
+
+
 def shot_entries_from_list(
     data: List[dict],
     filename: str,
@@ -58,61 +135,11 @@ def shot_entries_from_list(
     given, subject ids must resolve; when `declared_assets` is given, grounds
     ids must resolve (an undeclared ground aborts).
     """
+    ctx = _ShotPlanContext(filename=filename, roster=roster, declared_assets=declared_assets)
     entries: List[ShotEntry] = []
     seen: Set[str] = set()
-
     for item in data:
-        shot_id = str(item["id"])
-        if not SHOT_ID_PATTERN.match(shot_id):
-            raise ValueError(f"{filename}: shot id '{shot_id}' must match ^SH\\d+$")
-        if shot_id in seen:
-            raise ValueError(f"{filename}: duplicate shot id '{shot_id}'")
-        seen.add(shot_id)
-
-        subject_ids = [str(s) for s in item.get("subject_ids", [])]
-        unknown_subjects = [s for s in subject_ids if roster is not None and s not in roster]
-        if unknown_subjects:
-            raise ValueError(
-                f"{filename}: shot {shot_id} names unknown subject id(s) "
-                f"{unknown_subjects} — roster: {sorted(roster) if roster else 'none'}"
-            )
-
-        grounds = [str(g) for g in item.get("grounds", [])]
-        if declared_assets is not None:
-            undeclared = [g for g in grounds if g not in declared_assets]
-            if undeclared:
-                raise ValueError(
-                    f"{filename}: shot {shot_id} grounds on undeclared asset id(s) "
-                    f"{undeclared} — declared: {sorted(declared_assets)}"
-                )
-
-        shot_type = str(item.get("shot_type", "")).strip()
-        if shot_type and shot_type not in SHOT_TYPES:
-            raise ValueError(
-                f"{filename}: shot {shot_id} has unknown shot_type '{shot_type}' — "
-                f"expected one of {list(SHOT_TYPES)}"
-            )
-
-        intent = str(item["intent"]).strip()
-        label = str(item["label"]).strip()
-        if not intent:
-            raise ValueError(f"{filename}: shot {shot_id} has an empty intent")
-        if not label:
-            raise ValueError(f"{filename}: shot {shot_id} has an empty label")
-
-        entries.append(
-            ShotEntry(
-                id=shot_id,
-                label=label,
-                intent=intent,
-                shot_type=shot_type,
-                subject_ids=subject_ids,
-                grounds=grounds,
-                recommended=bool(item.get("recommended", True)),
-                reason=str(item.get("reason", "")),
-            )
-        )
-
+        entries.append(_entry_from_item(item, seen, ctx))
     return entries
 
 
@@ -126,27 +153,9 @@ def extract_shot_plan(
 
     Absent block → None. Present but malformed → ValueError (fail fast).
     """
-    lines = content.splitlines()
-    fence_idx = None
-    for i, line in enumerate(lines):
-        if line.strip() == SHOT_PLAN_FENCE:
-            fence_idx = i
-            break
-
-    if fence_idx is None:
+    data, _ = extract_fenced_block(content, SHOT_PLAN_FENCE, filename, "shot-plan")
+    if data is None:
         return None
-
-    block_lines = []
-    for line in lines[fence_idx + 1:]:
-        if line.strip() == "```":
-            break
-        block_lines.append(line)
-
-    block_text = "\n".join(block_lines)
-    try:
-        data = yaml.safe_load(block_text)
-    except yaml.YAMLError as e:
-        raise ValueError(f"{filename}: malformed shot-plan block: {e}") from e
 
     if not isinstance(data, list):
         raise ValueError(f"{filename}: shot-plan block must be a YAML list")

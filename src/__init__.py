@@ -14,10 +14,11 @@ Core Modules:
     - config: Configuration loading and validation
     - profile_manager: Profile loading and application
     - multi_angle_orchestrator: Main processing workflow
-    - shot_planner: --plan mode (shot sheet + shot list generation)
+    - shot_planner: Dynamic vision-based shot planning
+    - shot_generator: Per-shot prompt generation with banned-word retry
     - md_input_parser: MD file discovery and parsing
     - api_client: OpenRouter API interaction
-    - cost_calculator: Token usage and cost tracking
+    - cost_calculator: Token cost estimation for --cost-only
     - reporting: Summary and failure reporting
     - auth: API key management via env vars / pass / .env
 

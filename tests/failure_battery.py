@@ -102,7 +102,18 @@ def run_orchestrator(script):
     import src.shot_planner as planner
     import src.base_orchestrator as base
 
-    preflight.run_preflight = lambda *a, **k: None
+    def fake_preflight(config, md_files, client):
+        from src.preflight import PreflightReport
+
+        return PreflightReport(
+            files_validated=len(md_files),
+            urls_checked=0,
+            model_id=config.get("model", "test-model"),
+            vision_capable=True,
+            parsed_files=[(md, parse_md_file(md)) for md in md_files],
+        )
+
+    preflight.run_preflight = fake_preflight
     base.get_api_key = lambda: "test-key"
     fake, _ = responder(script)
     planner.process_text = fake
@@ -113,7 +124,7 @@ def run_orchestrator(script):
     try:
         process_all_md_files(
             [files_dir / "scene.md"],
-            {"retry_config": {"max_retries": 2}},
+            {"retry_config": {"max_retries": 2, "timeout": 600}},
             out_dir,
             files_dir,
         )
@@ -193,9 +204,8 @@ def run_generator(script):
     )
     um = load_user_message_template(ROOT / "USER-FILES/01.CONFIG/user_message.md")
     config = {"cache_config": {"enabled": False, "cache_ttl": "5m"}, "system_prompt": ""}
-    return generator.generate_shots(
-        make_parsed(), [(entry, [])], "scene.md", object(), config, um
-    ), calls
+    ctx = generator.GenerationContext(client=object(), config=config, um_template=um)
+    return generator.generate_shots(make_parsed(), [(entry, [])], "scene.md", ctx), calls
 
 
 @check("generator: prompt dirty twice raises FileProcessingError")
@@ -211,16 +221,16 @@ def _():
 
 @check("generator: prompt dirty once retries and recovers clean")
 def _():
-    (results, _, _, total_usage), calls = run_generator([(DIRTY_PROMPT, USAGE), (CLEAN_PROMPT, USAGE)])
-    assert "essence" not in results["SH01"]
+    outputs, calls = run_generator([(DIRTY_PROMPT, USAGE), (CLEAN_PROMPT, USAGE)])
+    assert "essence" not in outputs.prompts["SH01"]
     assert len(calls) == 2
 
 
 @check("generator: recovered shot is billed for both attempts")
 def _():
-    (_, _, _, total_usage), _ = run_generator([(DIRTY_PROMPT, USAGE), (CLEAN_PROMPT, USAGE)])
-    assert total_usage["input_tokens"] == 8000
-    assert total_usage["cost"] == 0.0142
+    outputs, _ = run_generator([(DIRTY_PROMPT, USAGE), (CLEAN_PROMPT, USAGE)])
+    assert outputs.usage["input_tokens"] == 8000
+    assert outputs.usage["cost"] == 0.0142
 
 
 # --- fence strictness + human-less Q5 guard -----------------------------------------

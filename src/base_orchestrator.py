@@ -2,9 +2,8 @@
 """Base orchestrator class with shared logic for processing orchestrators."""
 
 from abc import ABC, abstractmethod
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any
 from openrouter import OpenRouter
 from loguru import logger
 
@@ -23,35 +22,17 @@ class BaseOrchestrator(ABC):
         """
         self.config = config
 
-    def setup_processing(self, output_dir: Path, dry_run: bool = False) -> Tuple[Optional[OpenRouter], Dict[str, Any]]:
+    def setup_processing(self, output_dir: Path) -> None:
+        """Set up the dry-run environment (no client, no API calls).
+
+        Real runs wire their own client and staging logging through
+        `process_all_md_files`; this helper serves the dry-run branch.
         """
-        Set up processing environment.
+        self.setup_logging(output_dir)
 
-        Args:
-            output_dir: Output directory for results
-            dry_run: If True, skip client initialization
-
-        Returns:
-            Tuple of (API client or None, setup metadata)
-        """
-        from .reporting import setup_logging as _setup_logging
-
-        _setup_logging(output_dir)
-
-        metadata = {
-            "start_time": datetime.now(),
-            "dry_run": dry_run,
-            "output_dir": output_dir
-        }
-
-        if dry_run:
-            logger.info("🔍 DRY RUN MODE - No API calls will be made")
-            logger.info(f"System prompt ({len(self.config['system_prompt'])} chars):")
-            logger.info(self.config['system_prompt'][:500] + "...")
-            return None, metadata
-
-        client = self._initialize_api_client()
-        return client, metadata
+        logger.info("🔍 DRY RUN MODE - No API calls will be made")
+        logger.info(f"System prompt ({len(self.config['system_prompt'])} chars):")
+        logger.info(self.config['system_prompt'][:500] + "...")
 
     def setup_logging(self, output_dir: Path) -> None:
         """Point run logging at the given directory (staging, during real runs)."""
@@ -62,15 +43,16 @@ class BaseOrchestrator(ABC):
     def _initialize_api_client(self) -> OpenRouter:
         """Initialize and configure the OpenRouter API client."""
         api_key = get_api_key()
-        return OpenRouter(api_key=api_key)
+        timeout_ms = int(self.config["retry_config"]["timeout"] * 1000)
+        return OpenRouter(api_key=api_key, timeout_ms=timeout_ms)
 
     @abstractmethod
-    def process_batch(self, files: list, client: OpenRouter, output_dir: Path) -> Dict[str, Any]:
+    def process_batch(self, parsed_files: list, client: OpenRouter, output_dir: Path) -> Dict[str, Any]:
         """
         Process a batch of files.
 
         Args:
-            files: List of files to process
+            parsed_files: List of (md_path, ParsedMdInput) tuples
             client: OpenRouter API client
             output_dir: Output directory
 
@@ -81,14 +63,13 @@ class BaseOrchestrator(ABC):
 
     @abstractmethod
     def generate_processing_reports(self, output_dir: Path, stats: Dict[str, Any],
-                                  metadata: Dict[str, Any], duration: float) -> None:
+                                    duration: float) -> None:
         """
         Generate processing reports.
 
         Args:
             output_dir: Output directory
             stats: Processing statistics
-            metadata: Processing metadata
             duration: Processing duration in seconds
         """
         pass

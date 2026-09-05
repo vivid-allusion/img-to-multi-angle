@@ -5,20 +5,19 @@ from typing import List
 from .config_examples import FIELD_EXAMPLES
 
 
+def _stringify_example(value) -> str:
+    if isinstance(value, str):
+        return f'"{value}"'
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)
+
+
+_EXAMPLE_VALUES = {key: _stringify_example(value) for key, value in FIELD_EXAMPLES.items()}
+
+
 class ConfigReporter:
     """Generates detailed configuration error reports."""
-
-    def __init__(self):
-        """Initialize the reporter with example configurations."""
-        # Convert FIELD_EXAMPLES to string format for YAML
-        self.example_values = {}
-        for key, value in FIELD_EXAMPLES.items():
-            if isinstance(value, str):
-                self.example_values[key] = f'"{value}"'
-            elif isinstance(value, bool):
-                self.example_values[key] = str(value).lower()
-            else:
-                self.example_values[key] = str(value)
 
     def generate_missing_config_report(self, missing_fields: List[str]) -> str:
         """Generate detailed report showing exactly what's missing and where to add it.
@@ -117,7 +116,7 @@ class ConfigReporter:
 
     def _get_example_value(self, field_name: str) -> str:
         """Get example value for a field based on its name."""
-        return self.example_values.get(field_name, '<value>')
+        return _EXAMPLE_VALUES.get(field_name, '<value>')
 
     def _generate_standard_error_report(self, errors: List[str]) -> str:
         """Generate standard error report for non-missing-field errors."""
@@ -158,12 +157,6 @@ class ConfigReporter:
   model: claude-3-5-sonnet-latest
   max_tokens: 800
   temperature: 0.3
-  stream: false
-  processing_options:
-    trim_prompts: true
-    normalize_spaces: true
-    max_prompt_length: 5900
-    include_filename: true
   retry_config:
     max_retries: 2
     timeout: 600.0

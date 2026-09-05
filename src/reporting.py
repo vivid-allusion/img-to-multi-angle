@@ -2,6 +2,7 @@
 """Reporting and logging functions for multi-angle MD processing."""
 
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
@@ -45,17 +46,26 @@ def short_url(url: str, max_len: int = 50) -> str:
     return f"{url[:25]}...{url[-20:]}"
 
 
-def generate_summary(output_dir: Path, stats: Dict[str, Any],
-                    config: Dict[str, Any], duration: float, total_cost: float = 0.0) -> None:
+@dataclass
+class RunSummary:
+    """Everything a summary report needs in one bundle."""
+
+    stats: Dict[str, Any]
+    config: Dict[str, Any]
+    duration: float
+
+
+def generate_summary(output_dir: Path, summary: RunSummary) -> None:
     """Generate summary report in output directory.
-    
+
     Args:
         output_dir: Directory to save the summary
-        stats: Processing statistics
-        config: Configuration dictionary
-        duration: Processing duration in seconds
-        total_cost: Total API cost in USD
+        summary: RunSummary (stats, config, metadata, duration)
     """
+    stats = summary.stats
+    config = summary.config
+    duration = summary.duration
+
     report = f"""# Processing Summary
 
 **Run Date**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -63,41 +73,28 @@ def generate_summary(output_dir: Path, stats: Dict[str, Any],
 
 ## Results
 - Files Processed: {stats['processed']}/{stats['total']}
-- Successful: {stats['processed']}
-- Failed: {stats['failed']}
 - Skipped: {stats['skipped']}
 
 ## Cost Summary
-- **Total Cost**: ${total_cost:.4f} USD
-- **Average Cost per File**: ${(total_cost / stats['processed'] if stats['processed'] > 0 else 0):.4f} USD
-- **See COST.md for detailed breakdown**
+- **Total Cost**: ${stats['total_cost']:.4f} USD
+- **Average Cost per File**: ${(stats['total_cost'] / stats['processed'] if stats['processed'] > 0 else 0):.4f} USD
 
 ## Configuration
 - Model: {config['model']}
 - Temperature: {config['temperature']}
 - Max Tokens: {config['max_tokens']}
-- Fields Removed: {', '.join(config.get('fields_to_remove', []))}
 """
-    
-    if config.get('prompt_suffix'):
-        report += f"- Prompt Suffix: {config['prompt_suffix']}\n"
-    
+
     if config.get('profile_metadata'):
         metadata = config['profile_metadata']
         report += "\n## Profile\n"
-        report += f"- Name: {metadata.get('name', 'Unknown')}\n"
+        report += f"- Name: {metadata.get('profile_name', 'Unknown')}\n"
         report += f"- Version: {metadata.get('version', '1.0')}\n"
-    
-    if stats['errors']:
-        report += "\n## Errors\n"
-        for error in stats['errors']:
-            report += f"- {error}\n"
-    
-    report += "\n## Statistics\n"
-    report += f"- Total API Calls: {stats['processed']}\n"
+
     if stats['processed'] > 0:
+        report += "\n## Statistics\n"
         report += f"- Average Processing Time: {duration/stats['processed']:.1f} seconds per file\n"
-    
+
     summary_file = output_dir / "summary_report.md"
     summary_file.write_text(report)
     logger.info(f"Summary report saved to {summary_file}")

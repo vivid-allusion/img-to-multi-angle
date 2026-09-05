@@ -14,11 +14,6 @@ class ConfigurationError(TextProcessorError):
     pass
 
 
-class APIAuthenticationError(TextProcessorError):
-    """Raised when API authentication fails."""
-    pass
-
-
 class FileProcessingError(TextProcessorError):
     """Raised when file I/O operations fail."""
     pass

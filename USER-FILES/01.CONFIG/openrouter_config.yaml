@@ -1,25 +1,10 @@
 # -----------------------------------------------------------------------------
-# API SETTINGS
-# -----------------------------------------------------------------------------
-stream: false
-
-# -----------------------------------------------------------------------------
 # RETRY CONFIGURATION
 # -----------------------------------------------------------------------------
+# timeout doubles as the OpenRouter client timeout (seconds → ms).
 retry_config:
   max_retries: 2
   timeout: 600
-
-# -----------------------------------------------------------------------------
-# PROCESSING OPTIONS
-# -----------------------------------------------------------------------------
-processing_options:
-  trim_prompts: true
-  normalize_spaces: true
-  max_prompt_length: 1000
-
-  include_filename: false
-  max_response_length: 40000
 
 # -----------------------------------------------------------------------------
 # CACHE CONFIGURATION (optional but must be complete if present)

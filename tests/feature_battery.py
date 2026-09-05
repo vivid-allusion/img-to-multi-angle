@@ -154,7 +154,19 @@ def _():
     import src.preflight as preflight
     import src.base_orchestrator as base
 
-    preflight.run_preflight = lambda *a, **k: None
+    def fake_preflight(config, md_files, client):
+        from src.md_input_parser import parse_md_file
+        from src.preflight import PreflightReport
+
+        return PreflightReport(
+            files_validated=len(md_files),
+            urls_checked=0,
+            model_id=config.get("model", "test-model"),
+            vision_capable=True,
+            parsed_files=[(md, parse_md_file(md)) for md in md_files],
+        )
+
+    preflight.run_preflight = fake_preflight
     base.get_api_key = lambda: "test-key"
     patch_planner([(json.dumps(MISSING_FACE_CU), USAGE)])
 
@@ -163,7 +175,7 @@ def _():
     try:
         process_all_md_files(
             [files_dir / "scene.md"],
-            {"retry_config": {"max_retries": 2}},
+            {"retry_config": {"max_retries": 2, "timeout": 600}},
             out_dir,
             files_dir,
         )

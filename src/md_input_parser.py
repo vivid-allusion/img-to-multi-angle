@@ -28,7 +28,6 @@ class ParsedMdInput:
     checked_shots: List[str]
     all_checkbox_lines: List[str]
     shot_sheet: Optional[ShotSheet] = None
-    shot_sheet_text: Optional[str] = None
     shot_entries: Optional[List[ShotEntry]] = None
     checked_shot_bindings: List[Tuple[str, Optional[List[str]]]] = field(
         default_factory=list
@@ -106,6 +105,55 @@ def _is_skippable_line(line: str) -> bool:
     return bool(MD_LINK_PATTERN.search(line) or URL_PATTERN.search(line))
 
 
+def _collect_images(lines: List[str], in_fence) -> Tuple[List[str], List[int]]:
+    """Collect image URLs and their line indices, skipping the assets fence."""
+    images = []
+    image_line_indices = []
+    for i, line in enumerate(lines):
+        if in_fence(i):
+            continue
+        match = MD_IMAGE_PATTERN.search(line)
+        if match:
+            images.append(match.group(2))
+            image_line_indices.append(i)
+    return images, image_line_indices
+
+
+def _collect_scene(lines: List[str], in_fence, first_image_idx: int) -> List[str]:
+    """Collect scene lines before the first image, skipping assets/links/URLs."""
+    scene_lines = []
+    for i, line in enumerate(lines[:first_image_idx]):
+        if in_fence(i):
+            continue
+        if _is_skippable_line(line):
+            continue
+        scene_lines.append(line.strip())
+    return scene_lines
+
+
+def _collect_checkbox_sections(lines_after_first_image: List[str]) -> Tuple[List[str], List[str]]:
+    """Split the post-image region into checkbox lines and ref-image lines."""
+    checkbox_lines = []
+    ref_image_lines = []
+    in_checkbox_section = True
+
+    for line in lines_after_first_image:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if in_checkbox_section and _is_checkbox_line(stripped):
+            checkbox_lines.append(stripped)
+        elif MD_IMAGE_PATTERN.search(stripped):
+            in_checkbox_section = False
+            ref_image_lines.append(stripped)
+        elif _is_checkbox_line(stripped):
+            checkbox_lines.append(stripped)
+        else:
+            in_checkbox_section = False
+
+    return checkbox_lines, ref_image_lines
+
+
 def parse_md_file(file_path: Path) -> ParsedMdInput:
     """Parse MD file into scene, original image, ref images, and checked angles.
 
@@ -138,61 +186,26 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
     def _in_assets_fence(i: int) -> bool:
         return assets_fence is not None and assets_fence[0] <= i <= assets_fence[1]
 
-    images = []
-    image_line_indices = []
-    for i, line in enumerate(lines):
-        if _in_assets_fence(i):
-            continue
-        match = MD_IMAGE_PATTERN.search(line)
-        if match:
-            images.append(match.group(2))
-            image_line_indices.append(i)
-
+    images, image_line_indices = _collect_images(lines, _in_assets_fence)
     if not images:
         raise ValueError(f"No images found in {file_path.name}")
 
     first_image_idx = image_line_indices[0]
-    scene_lines = []
-    for i, line in enumerate(lines[:first_image_idx]):
-        if _in_assets_fence(i):
-            continue
-        if _is_skippable_line(line):
-            continue
-        scene_lines.append(line.strip())
-
+    scene_lines = _collect_scene(lines, _in_assets_fence, first_image_idx)
     if not any(line.strip() for line in scene_lines):
         raise ValueError(f"Scene is empty after filtering in {file_path.name}")
 
     scene = "\n".join(scene_lines).strip()
-
     original_image = images[0]
 
-    lines_after_first_image = lines[first_image_idx + 1:]
-
-    checkbox_lines = []
-    ref_image_lines = []
-    in_checkbox_section = True
-
-    for line in lines_after_first_image:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if in_checkbox_section and _is_checkbox_line(stripped):
-            checkbox_lines.append(stripped)
-        elif MD_IMAGE_PATTERN.search(stripped):
-            in_checkbox_section = False
-            ref_image_lines.append(stripped)
-        elif _is_checkbox_line(stripped):
-            checkbox_lines.append(stripped)
-        else:
-            in_checkbox_section = False
+    checkbox_lines, ref_image_lines = _collect_checkbox_sections(
+        lines[first_image_idx + 1:]
+    )
 
     checked_shots = []
-    all_checkbox_labels = []
     checked_shot_bindings = []
     for cb_line in checkbox_lines:
         shot_id, ground_ids, is_checked = _parse_checkbox_line(cb_line)
-        all_checkbox_labels.append(shot_id)
         if is_checked:
             checked_shots.append(shot_id)
             checked_shot_bindings.append((shot_id, ground_ids))
@@ -203,7 +216,7 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
         if match:
             ref_images.append(match.group(2))
 
-    shot_sheet, shot_sheet_text = extract_shot_sheet(content, file_path.name)
+    shot_sheet = extract_shot_sheet(content, file_path.name)
 
     declared_assets = {a.id for a in assets} if assets is not None else None
     roster = {s.id for s in shot_sheet.subjects} if shot_sheet else None
@@ -218,7 +231,6 @@ def parse_md_file(file_path: Path) -> ParsedMdInput:
         checked_shots=checked_shots,
         all_checkbox_lines=checkbox_lines,
         shot_sheet=shot_sheet,
-        shot_sheet_text=shot_sheet_text,
         shot_entries=shot_entries,
         checked_shot_bindings=checked_shot_bindings,
         assets=assets,
