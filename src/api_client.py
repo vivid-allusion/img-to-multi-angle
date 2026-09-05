@@ -1,9 +1,26 @@
 """OpenRouter API wrapper for multi-angle processing."""
 
+import time
 from typing import Dict, Any, List, Optional
-from openrouter import OpenRouter
+from openrouter import OpenRouter, errors
+from openrouter.utils import BackoffStrategy, RetryConfig
 from loguru import logger
 from .response_utils import extract_response_text
+
+TRANSIENT_ERRORS = (
+    errors.TooManyRequestsResponseError,        # 429
+    errors.InternalServerResponseError,         # 500
+    errors.BadGatewayResponseError,             # 502
+    errors.ServiceUnavailableResponseError,     # 503
+    errors.RequestTimeoutResponseError,         # 408
+    errors.EdgeNetworkTimeoutResponseError,     # 524
+    errors.ProviderOverloadedResponseError,     # 529
+    errors.NoResponseError,
+)
+
+NO_SDK_RETRY = RetryConfig(
+    "none", BackoffStrategy(500, 60000, 1.5, 3600000), False
+)
 
 
 def build_system_prompt(config: Dict[str, Any]) -> str:
@@ -81,6 +98,10 @@ def process_text(
 ) -> tuple[str, Dict[str, Any]]:
     """Send a user message to OpenRouter and verify the response.
 
+    Transient API errors (TRANSIENT_ERRORS) are retried with exponential
+    backoff; everything else — and the response guards below — abort on the
+    first failure.
+
     Raises:
         RuntimeError: If the response text is empty or prompt_tokens falls
             below the configured min_prompt_tokens floor. skip_token_floor
@@ -91,7 +112,25 @@ def process_text(
     system_message = _build_system_message(system)
     api_payload = _build_api_payload(user_content, config, system_message, response_format)
 
-    response = client.chat.send(**api_payload)
+    retry_config = config["retry_config"]
+    transport_retries = retry_config["transport_retries"]
+    delay = retry_config["backoff_base_seconds"]
+    max_delay = retry_config["backoff_max_seconds"]
+    # Worst case per plan step: 3 content attempts × 3 transport attempts =
+    # 9 billed calls, all accumulated by accumulate_usage.
+    for attempt in range(1, transport_retries + 2):
+        try:
+            response = client.chat.send(**api_payload, retries=NO_SDK_RETRY)
+            break
+        except TRANSIENT_ERRORS as e:
+            if attempt > transport_retries:
+                raise
+            logger.warning(
+                f"Transient API error ({type(e).__name__}) on attempt "
+                f"{attempt}/{transport_retries + 1} — retrying in {delay}s"
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, max_delay)
 
     response_text = extract_response_text(response)
     usage_data = _extract_usage_data(response)

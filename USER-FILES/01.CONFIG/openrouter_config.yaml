@@ -2,9 +2,14 @@
 # RETRY CONFIGURATION
 # -----------------------------------------------------------------------------
 # timeout doubles as the OpenRouter client timeout (seconds → ms).
+# transport_retries/backoff_* drive the transient-error retry loop in
+# api_client.process_text (max_retries belongs to the content-retry loops).
 retry_config:
   max_retries: 2
   timeout: 600
+  transport_retries: 2
+  backoff_base_seconds: 2
+  backoff_max_seconds: 30
 
 # -----------------------------------------------------------------------------
 # CACHE CONFIGURATION (optional but must be complete if present)

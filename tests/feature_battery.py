@@ -1,9 +1,11 @@
-"""Feature battery (8 checks) — the planner-retry correction acceptance criteria
-from new_feature.md §3 items 1–8. Run from the repo root:
+"""Feature battery — the planner-retry acceptance criteria from new_feature.md
+§3 items 1–8, plus the transport-backoff contract (brief §3 items 1–10 with the
+Q1/Q2/Q3 answers applied). Run from the repo root:
 
     venv/bin/python tests/feature_battery.py
 
-Pure Python; `process_text` monkeypatched, no API calls.
+Pure Python; `process_text` monkeypatched for planner checks and driven with a
+fake client for backoff checks; no API calls, `time.sleep` captured.
 """
 
 import json
@@ -11,11 +13,16 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+
+import httpx
+from openrouter import errors
 
 ROOT = Path(__file__).resolve().parent.parent
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
 
+import src.api_client as api_client
 from src.assets import Asset
 from src.md_input_parser import ParsedMdInput
 from src.shot_planner import PlanRejected, _clean_json_text, plan_file
@@ -286,6 +293,180 @@ def _():
     accumulate_usage(total, USAGE)
     assert total["cost"] == 0.0142
     assert total["input_tokens"] == 8000
+
+
+# --- transport backoff in process_text (backoff brief §3, Q1/Q2/Q3 answers) ---------
+
+RETRY_CONFIG = {
+    "transport_retries": 2,
+    "backoff_base_seconds": 2,
+    "backoff_max_seconds": 30,
+}
+
+
+def make_response(text="reframed prompt"):
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=text))],
+        usage=SimpleNamespace(
+            prompt_tokens=USAGE["input_tokens"],
+            completion_tokens=USAGE["output_tokens"],
+            cost=USAGE["cost"],
+            prompt_tokens_details=None,
+        ),
+    )
+
+
+class FakeChat:
+    """Replays `script` through send(); Exception entries are raised."""
+
+    def __init__(self, script):
+        self.script = list(script)
+        self.calls = []
+
+    def send(self, **kwargs):
+        self.calls.append(kwargs)
+        entry = self.script[min(len(self.calls), len(self.script)) - 1]
+        if isinstance(entry, Exception):
+            raise entry
+        return entry
+
+
+def make_api_error(cls):
+    return cls.__new__(cls)
+
+
+def run_process_text(script, retry_config=None, extra_config=None):
+    """Drive the real process_text with a fake client; capture sends and sleeps.
+
+    Returns (result, calls, delays) — result is the raised exception when
+    process_text propagates one.
+    """
+    config = {
+        "model": "test-model",
+        "max_tokens": 4000,
+        "temperature": 0.2,
+        "retry_config": retry_config or dict(RETRY_CONFIG),
+    }
+    if extra_config:
+        config.update(extra_config)
+    chat = FakeChat(script)
+    delays = []
+    real_sleep = api_client.time.sleep
+    api_client.time.sleep = lambda s: delays.append(s)
+    try:
+        try:
+            result = api_client.process_text(
+                [{"type": "text", "text": "scene"}], client=SimpleNamespace(chat=chat), config=config
+            )
+        except Exception as e:
+            return e, chat.calls, delays
+        return result, chat.calls, delays
+    finally:
+        api_client.time.sleep = real_sleep
+
+
+@check("backoff: 429 on attempts 1-2, success on 3 → 3 calls, delays [2, 4]")
+def _():
+    err = make_api_error(errors.TooManyRequestsResponseError)
+    (text, usage), calls, delays = run_process_text([err, err, make_response("prompt")])
+    assert text == "prompt"
+    assert len(calls) == 3
+    assert delays == [2, 4]
+
+
+@check("backoff: transient every attempt → 3 calls, delays [2, 4], no final sleep")
+def _():
+    err = make_api_error(errors.BadGatewayResponseError)
+    result, calls, delays = run_process_text([err, err, err])
+    assert isinstance(result, errors.BadGatewayResponseError)
+    assert len(calls) == 3
+    assert delays == [2, 4]
+
+
+@check("backoff: cap binds — 5 retries, base 2, cap 5 → delays [2, 4, 5, 5, 5]")
+def _():
+    err = make_api_error(errors.ServiceUnavailableResponseError)
+    cfg = {"transport_retries": 5, "backoff_base_seconds": 2, "backoff_max_seconds": 5}
+    result, calls, delays = run_process_text([err] * 6, retry_config=cfg)
+    assert isinstance(result, errors.ServiceUnavailableResponseError)
+    assert len(calls) == 6
+    assert delays == [2, 4, 5, 5, 5]
+
+
+@check("backoff: 401 → 1 call, 0 sleeps, propagates")
+def _():
+    err = make_api_error(errors.UnauthorizedResponseError)
+    result, calls, delays = run_process_text([err])
+    assert isinstance(result, errors.UnauthorizedResponseError)
+    assert len(calls) == 1
+    assert delays == []
+
+
+@check("backoff: 402 → 1 call, 0 sleeps, propagates")
+def _():
+    err = make_api_error(errors.PaymentRequiredResponseError)
+    result, calls, delays = run_process_text([err])
+    assert isinstance(result, errors.PaymentRequiredResponseError)
+    assert len(calls) == 1
+    assert delays == []
+
+
+@check("backoff: empty response text → 1 call, 0 sleeps, RuntimeError")
+def _():
+    result, calls, delays = run_process_text([make_response("   ")])
+    assert isinstance(result, RuntimeError)
+    assert "empty response" in str(result)
+    assert len(calls) == 1
+    assert delays == []
+
+
+@check("backoff: token floor breach → 1 call, 0 sleeps, RuntimeError")
+def _():
+    result, calls, delays = run_process_text(
+        [make_response("prompt")], extra_config={"min_prompt_tokens": 99999}
+    )
+    assert isinstance(result, RuntimeError)
+    assert "below min_prompt_tokens" in str(result)
+    assert len(calls) == 1
+    assert delays == []
+
+
+@check("backoff: usage from successful post-retry call returned intact")
+def _():
+    err = make_api_error(errors.TooManyRequestsResponseError)
+    (text, usage), calls, delays = run_process_text([err, make_response("prompt")])
+    assert usage["cost"] == 0.0071
+    assert usage["input_tokens"] == 4000
+    assert len(calls) == 2
+    assert delays == [2]
+
+
+@check("config: retry_config missing transport_retries → validation names the key")
+def _():
+    from src.config_validator import ConfigurationValidator
+
+    config = {"retry_config": {"max_retries": 2, "timeout": 600}}
+    valid, missing = ConfigurationValidator().validate_required_fields(config)
+    assert not valid
+    assert "retry_config.transport_retries" in missing
+    assert "retry_config.backoff_base_seconds" in missing
+    assert "retry_config.backoff_max_seconds" in missing
+
+
+@check("backoff: httpx.TimeoutException → 1 call, 0 sleeps, propagates")
+def _():
+    result, calls, delays = run_process_text([httpx.ReadTimeout("timed out")])
+    assert isinstance(result, httpx.ReadTimeout)
+    assert len(calls) == 1
+    assert delays == []
+
+
+@check("backoff: chat.send receives retries=RetryConfig(strategy='none')")
+def _():
+    _, calls, _ = run_process_text([make_response("prompt")])
+    sent = calls[0]["retries"]
+    assert sent.strategy == "none"
+    assert sent.retry_connection_errors is False
 
 
 def main() -> int:

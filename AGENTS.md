@@ -1,3 +1,76 @@
+## Last Session Summary (2026-09-05) — Exponential Backoff on Transient API Failures
+
+### Work done — ✅ COMPLETE (all batteries green: 44/44, 11/11, 20/20)
+
+Feature brief `USER-FILES/07.TEMP/new_feature.md` (transport backoff); Q1–Q4 answered in
+`USER-FILES/07.TEMP/questions.md` — options 2/1/1/1:
+- **Q1** → `transport_retries: 2` (delays 2/4 = 6s per call before abort; the 30s cap is
+  decorative below 4 retries)
+- **Q2** → disable the SDK's internal retry (`RetryConfig("none", ...)`); the outer loop is
+  the sole retry authority
+- **Q3** → no `httpx.TimeoutException` in the tuple; timeouts abort on first failure (600s)
+- **Q4** → `--selftest` untouched (calls `chat.send` directly, stays single-shot)
+
+### The SDK discovery that reshaped the brief (verified against the installed openrouter SDK)
+`chat.send()` ships an internal retry loop enabled by default: strategy "backoff", initial 0.5s,
+max 60s, exponent 1.5, `max_elapsed_time` **1 hour**, `retry_connection_errors=True`, codes
+`["5XX"]` (`openrouter/chat.py` ~line 818, `utils/retries.py`). Consequences:
+- 429 and 408 fail fast (4XX not in the internal retry list) — outer retry genuinely valuable.
+- 500/502/503/524/529 and `NoResponseError` only surface AFTER up to 1h of internal retrying;
+  an outer loop over them would retry hour-stale errors.
+- A client-side `timeout_ms` breach raises an `httpx.TimeoutException` (NOT an
+  `openrouter.errors` class) — after ~1h of internal retries. The brief's §2.6 premise
+  ("fails after 600s") was wrong; the fix is disabling the SDK retry, not adding classes.
+
+### Changes landed
+- `src/api_client.py` (116 → 155): `TRANSIENT_ERRORS` tuple (8 `openrouter.errors` classes,
+  no catch-all); `NO_SDK_RETRY = RetryConfig("none", BackoffStrategy(...), False)` passed as
+  `retries=` to every `chat.send`; retry loop around the send only (`delay = min(delay * 2,
+  max_delay)`, sleep between attempts only, WARN naming the class and attempt count); the
+  empty-response and `min_prompt_tokens` guards stay OUTSIDE the loop; worst-case comment
+  (3 content × 3 transport = 9 billed calls per plan step, all accumulated).
+- `src/config_validator.py`: `REQUIRED_RETRY_CONFIG` now
+  `{max_retries, timeout, transport_retries, backoff_base_seconds, backoff_max_seconds}`.
+- `USER-FILES/01.CONFIG/openrouter_config.yaml`: the three new keys with a comment.
+- `tests/feature_battery.py` (9 → 20 checks): +11 backoff checks via `FakeChat` + a
+  `SimpleNamespace` response; delays captured by monkeypatching `time.sleep`; permanent
+  classes → 1 call 0 sleeps; validator names missing keys; `httpx.TimeoutException` → 1 call
+  0 sleeps; `retries` kwarg carries strategy "none".
+- `README.md`: base-config example and the required-keys sentence synced with the new keys.
+
+### Verification
+- 44/44, 11/11, 20/20 — feature battery runs ~1s, nothing sleeps for real.
+- compileall clean; 0 print()/TODO/FIXME in src/; `api_client.py` 155 ≤ 250.
+- `--list-profiles` / `--cost-only` / `--dry-run` all exit 0 with the new keys required.
+- **Live run** (`/tmp/opencode/live_test/taken-2-fight-scene.md`, real key from `.env`):
+  6 shots planned + generated, atomic promotion, **$0.0570, exit 0, zero "Transient API
+  error" warnings** — the happy path is untouched. `04.INPUT/` not touched.
+
+### Gotchas learned — do not rediscover these
+- **The openrouter SDK retries internally by default for up to 1 hour.** Any future change
+  that removes `retries=NO_SDK_RETRY` silently re-enables it (5XX/connection stalls become
+  hour-long again). The feature-battery check "chat.send receives retries=RetryConfig(
+  strategy='none')" pins it; re-run it after any SDK upgrade, and re-verify the import path
+  `openrouter.utils.{RetryConfig,BackoffStrategy}` still exists.
+- **SDK error classes cannot be constructed normally in tests** (their `__init__` demands
+  `data` + `httpx.Response`). `cls.__new__(cls)` builds an instance the `TRANSIENT_ERRORS`
+  tuple's isinstance check accepts — that is all the loop uses.
+
+### Still open — re-verified this session, all still true (unchanged by this feature)
+- `reporting.py:91` prints "Name: Unknown" when profile metadata lacks a `profile_name` key.
+- Preflight failures still surface as raw tracebacks — `run_preflight` at
+  `multi_angle_orchestrator.py:150`, outside any `PreflightError` handler.
+- `cli_handler.py:69` defensive `.get('skipped', 0)` / `.get('total_cost', 0.0)` (cosmetic).
+
+### Git state
+Uncommitted on `master`: this backoff batch (`src/api_client.py`, `src/config_validator.py`,
+`USER-FILES/01.CONFIG/openrouter_config.yaml`, `tests/feature_battery.py`, `README.md`,
+`AGENTS.md`), stacked on the pre-existing uncommitted `AGENTS.md`/`README.md` edits from the
+`ed336c3` close-out. Commit awaits the owner's go per repo discipline. TODO.md wiped to 0
+bytes at close-out; this entry is the standing reference.
+
+---
+
 ## Last Session Summary (2026-09-05) — Session Close-out: Cleanup Verified, TODO Wiped
 
 ### Work done — ✅ COMPLETE
@@ -18,10 +91,41 @@
 - Live single-pass run with a real key remains the gate before any commit (unchanged).
 
 ### Git state
-Uncommitted: cleanup batch (7 modified src/, deleted src/data_models.py, requirements.txt,
-run.py, deleted scripts/generate_profiles.py + PROFILE_GUIDE.md) stacked on the
-still-uncommitted 2026-09-05 refactor batch (31 modified src/, 2 new modules, 3 config/docs,
-2 batteries). Commit awaits the owner's go.
+**Committed as `ed336c3`** — the refactor batch and the cleanup batch landed together. Working
+tree clean; the "awaits the owner's go" note that stood here is resolved.
+
+### Still open — THE CURRENT LIST, re-verified 2026-09-05 against `ed336c3`
+Every earlier "Still open" list in this file predates `ed336c3` and is now wrong on five counts.
+This is the standing one; ignore the older ones.
+
+**Resolved by `ed336c3` — do not re-file:**
+- ~~`stream` / `processing_options.*` required but unread~~ — resolved by deletion: gone from
+  `openrouter_config.yaml` and from `FieldValidator.REQUIRED_BASE_CONFIG`.
+- ~~`retry_config` unread~~ — `max_retries` at `shot_planner.py:112`, `timeout` at
+  `base_orchestrator.py:46`.
+- ~~No client timeout~~ — `OpenRouter(..., timeout_ms=timeout * 1000)`, 600s.
+- ~~`reporting.py` COST.md reference~~ — zero references remain.
+- ~~`stats["failed"]` / `stats["errors"]` vestigial~~ — keys gone; `skipped` is a real count now.
+- ~~`shot_planner.py` at 248 lines, split candidate~~ — now 159; the spec split into
+  `shot_plan_spec.py`. Largest file is `md_input_parser.py` at 237.
+
+**Still true:**
+- `reporting.py:91` prints "Name: Unknown" when profile metadata lacks a `profile_name` key.
+- Preflight failures still surface as raw tracebacks — `run_preflight` is called at
+  `multi_angle_orchestrator.py:150`, outside any `PreflightError` handler.
+- `cli_handler.py:69` defensive `.get()` on keys that always exist (cosmetic, as noted above).
+
+### Documentation state — refreshed 2026-09-05
+`README.md` corrected for `ed336c3`: dropped `pandas` from the dependency list (removed from
+`requirements.txt`) and added `python-dotenv`; removed `stream` and `processing_options` from the
+base-config example (both keys no longer exist) and named the real required set; annotated
+`06.DONE/` as unused (nothing in `src/` moves files there, and the manifesto forbids it); replaced
+the coverage-gate troubleshooting row, which predated the planner's retry loop and told the reader
+to "rerun" an error the planner has already retried.
+
+`USER-FILES/07.TEMP/new_feature.md` (the backoff brief) was also re-checked against `ed336c3` —
+its design holds, but §2.5 had claimed `retry_config.timeout` was unread. It is wired now, which
+means retrying timeout-class errors would turn one 600s stall into four. See §2.6 and Q2 there.
 
 ---
 

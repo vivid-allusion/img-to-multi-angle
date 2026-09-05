@@ -80,7 +80,10 @@ class FieldValidator:
         "model", "max_tokens", "temperature",
         "retry_config", "avg_output_tokens"
     }
-    REQUIRED_RETRY_CONFIG = {"max_retries", "timeout"}
+    REQUIRED_RETRY_CONFIG = {
+        "max_retries", "timeout", "transport_retries",
+        "backoff_base_seconds", "backoff_max_seconds"
+    }
     SKIPPED_KEYS = {"metadata", "enabled", "min_prompt_tokens"}
 
     def validate_required_fields(self, config: Dict[str, Any]) -> Tuple[bool, List[str]]:

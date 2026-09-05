@@ -67,7 +67,7 @@ Prompts target 70–110 words.
 
 - Python 3.10+
 - OpenRouter API key
-- Dependencies: `openrouter`, `pyyaml`, `loguru`, `pandas`, `natsort`
+- Dependencies: `openrouter`, `pyyaml`, `loguru`, `natsort`, `python-dotenv`
 
 ## Installation
 
@@ -160,31 +160,33 @@ USER-FILES/
 │   └── *.yaml                    # Model profiles
 ├── 04.INPUT/                     # Input .md files go here (READ ONLY)
 ├── 05.OUTPUT/                    # Timestamped output directories
-├── 06.DONE/                      # Processed files moved here
+├── 06.DONE/                      # Unused — nothing moves files here; inputs stay put
 └── 07.TEMP/                      # Temporary files
 ```
 
 ### Base Config (`openrouter_config.yaml`)
 
 ```yaml
-stream: false
-
+# timeout doubles as the OpenRouter client timeout (seconds → ms)
+# transport_retries/backoff_* drive the transient-error retry loop in process_text
 retry_config:
   max_retries: 2
   timeout: 600
+  transport_retries: 2
+  backoff_base_seconds: 2
+  backoff_max_seconds: 30
 
-processing_options:
-  trim_prompts: true
-  normalize_spaces: true
-  max_prompt_length: 1000
-  max_response_length: 40000
-
+# optional, but must be complete if present
 cache_config:
   enabled: false
   cache_ttl: 5m
 
 avg_output_tokens: 800
 ```
+
+Required keys are `model`, `max_tokens`, `temperature`, `retry_config` (with `max_retries`,
+`timeout`, `transport_retries`, `backoff_base_seconds`, and `backoff_max_seconds`), and
+`avg_output_tokens` — see `FieldValidator.REQUIRED_BASE_CONFIG` in `src/config_validator.py`.
 
 ### Profile Files (`USER-FILES/03.PROFILES/*.yaml`)
 
@@ -264,6 +266,6 @@ Costs are calculated from: system prompt tokens + shot label/intent tokens + est
 | `Config conflict` | Remove duplicate settings — each key must be in config OR profile, not both |
 | `system_prompt.md not found` | Ensure `USER-FILES/01.CONFIG/system_prompt.md` exists |
 | `ticked shot not found in shot-plan block` | The ticked id is absent from that file's shot-plan fence — fix the id or untick it |
-| `plan ... missing mandatory coverage` | The planner returned a human-present plan without a face close-up, hands insert, or wide master — rerun |
+| `plan call failed after N attempts` | The planner could not produce a valid plan (missing face close-up / hands insert / wide master, or a banned word in an intent) after its retries — the rejection reason is in the WARN lines above it |
 | `forbidden word(s) ... after one retry` | The model would not drop an abstract word; rerun, or adjust the ban list in `src/banned_words.py` |
 | `ref image not declared in the assets block` | Once an assets block exists, every reference image must be declared in it |
