@@ -1,4 +1,120 @@
-## Last Session Summary (2026-09-02) — Grounded Human & Action Shot Coverage + Concrete Prompt Craft
+## Last Session Summary (2026-09-04) — Shot-Planner Retry That Actually Corrects Itself
+
+### Feature Implementation — ✅ COMPLETE (verified live)
+
+Spec `USER-FILES/07.TEMP/new_feature.md` (the commit under repair: `b258073`); design forks
+Q7–Q9 resolved in `USER-FILES/07.TEMP/questions.md` — all answered option 1:
+- **Q7** — live run from `/tmp` input dir (never write into `04.INPUT/`, which is read-only
+  sacred space; brief item 10 named `04.INPUT/input-test.md`, a file that does not exist there)
+- **Q8** — permanent verification batteries committed to `tests/` (the `/tmp` scratchpad
+  batteries were lost twice already; AGENTS.md had flagged the decision)
+- **Q9** — `retry_config.timeout` stays unwired this pass
+
+### What the planner retry was (the defects fixed)
+`b258073` wrapped the plan call in a 3-attempt loop that (a) sent byte-identical requests every
+attempt — useless against the coverage gate and the banned-intent scan, the two content
+rejections it actually hits, (b) caught `Exception`, re-firing undeclared-asset aborts and
+auth/402/token-floor errors three times, and (c) discarded usage, so plan spend was invisible
+(a failing plan burned ~$0.021 unreported).
+
+### Modules Modified (2)
+- `shot_planner.py` (248 lines — 2 under the soft limit, split candidate) — `PlanRejected`
+  exception (the only thing the loop catches); `_parse_plan(data, parsed, filename)` helper
+  raises it for all six content rejections (invalid JSON, non-object JSON, invalid shot sheet,
+  invalid shot list, missing mandatory coverage, banned intent) while the undeclared-asset
+  check raises plain `RuntimeError` inside it and aborts without retry ("a wrong binding is
+  worse than none" — deliberately NOT a PlanRejected). `PLAN_RETRY_NOTE` appends
+  `Your previous plan was rejected: {error}…` to `PLAN_INSTRUCTION` on attempts 2+;
+  `build_user_content` rebuilt per attempt; `max_retries` read as
+  `config["retry_config"]["max_retries"]` (direct index — the `.get(..., 2)` default was
+  unreachable, `config_validator.py` requires the key); unreachable post-loop `raise` deleted;
+  `_clean_json_text` now WARNs when it strips a fence (strict json_schema makes a fenced
+  response a signal, not something to silently repair). Signature →
+  `(ShotSheet, List[ShotEntry], Dict[str, Any])`; usage accumulated via
+  `shot_generator.accumulate_usage` for **every** attempt including rejected ones (they were
+  billed).
+- `multi_angle_orchestrator.py` (192) — `plan_usage = {}` before the branch; auto-plan branch
+  unpacks three values; after `generate_shots(...)` returns, `accumulate_usage(total_usage,
+  plan_usage)`. Checked-shot path untouched (no plan call, no plan usage).
+
+### New Test Batteries (3 — committed per Q8, run with `venv/bin/python tests/<name>.py`)
+- `tests/offline_battery.py` (386 lines) — 44 checks: ban scan (9 known-bad incl. boilerplate
+  regex conjugation/case-insensitivity + 5 true negatives incl. "maintaining her grip on the
+  rope"), shot_type parse/reject/legacy, shot-plan fence round-trip (enriched MD re-parses
+  identically), coverage-gate set logic, placeholder substitution, 4 few-shots 70–110 words
+  clean with no CU/MCU/OTS leaks, no stale 60–90 band in either prompt asset
+- `tests/failure_battery.py` (271) — 11 checks: exit-1 on missing face_cu / dirty planner
+  intent (orchestrator level with faked plan API), `_FAILED` dir + zero promoted output for
+  both, generator dirty-twice → FileProcessingError, dirty-once recovers billed for 2 calls,
+  bad fence shot_type → ValueError, Q5 human-less scene still passes the gate
+- `tests/feature_battery.py` (293) — 9 checks: the new retry contract (reason fed back in
+  attempts 2/3, rejection text in outgoing `user_content`; exhaustion exits 1 with `_FAILED`
+  and no promoted output; rejected-1st/valid-2nd succeeds; undeclared asset exactly 1 call and
+  NOT a PlanRejected; auth error propagates after exactly 1 call; banned intent retries with
+  the word named; 2 rejected + 1 accepted at 0.0071 → 0.0213 usage; `_clean_json_text` WARN
+  only on fences; `accumulate_usage` fold)
+- All three green at wrap-up: 44/44, 11/11, 9/9.
+
+### Live Run — ALL PASSED (brief item 10 + Q7)
+Copied `04.INPUT/taken-2-fight-scene.md` (3 human subjects, Backblaze image URL — HEAD-checks
+200 `image/png`) to `/tmp/opencode/live_test/` and ran
+`venv/bin/python -m src.main --input-dir /tmp/opencode/live_test`. Profile
+`gemini-3.7-flash_temp0.2_REAL-TIME`, no retries needed, plan call ~16s.
+- 6 shots: Bryan Face Close-Up, Bald Attacker Face Close-Up, Bryan Combat Medium, Baton Grip
+  Insert, Courtyard Wide Master, Over-the-Shoulder Vantage — the §2 hierarchy exactly.
+- All six prompts 80–98 words, zero banned words.
+- **Total Cost $0.0624 — now includes the plan call** (last session's $0.0457 excluded it).
+- `04.INPUT/` sha256-unchanged. Output at `05.OUTPUT/260903_221533_gemini-3.7-flash_RT_temp0.2_MULTI-ANGLE-MD/`.
+
+### Gotchas learned this session — do not rediscover these
+- **`str(dict)` is not JSON.** Fake `process_text` responses in the batteries must be
+  `json.dumps(...)`; Python's `str()` emits single quotes and `json.loads` rejects them.
+- **Patch the right namespaces.** `shot_planner` binds `process_text` at import →
+  patch `src.shot_planner.process_text`. `generate_shots` is bound in
+  `multi_angle_orchestrator` → patch there if needed. The orchestrator imports `plan_file`
+  *locally inside the method*, so patching `shot_planner.process_text` lets a real plan call
+  run offline. Also patch `preflight.run_preflight` (imported inside
+  `process_all_md_files`) and `base_orchestrator.get_api_key` (bound at module top).
+- **Batteries must `os.chdir(ROOT)`.** `MultiAngleOrchestrator.__init__` hardcodes the
+  relative `Path("USER-FILES/01.CONFIG/user_message.md")` — tests run from anywhere would
+  fail on the real template load.
+- **Usage must accumulate inside the try, before validation.** A rejected plan was billed
+  the moment `process_text` returned; `accumulate_usage` therefore runs immediately after
+  the call, before `_parse_plan` can raise.
+- **The undeclared-asset check lives in `_parse_plan` and raises `RuntimeError` on purpose.**
+  The loop catches only `PlanRejected`, so that RuntimeError propagates after exactly one
+  call — do not "clean it up" into a PlanRejected.
+- **Test files may print.** The 0-`print()` rule is for `src/` only; the batteries report
+  with `print`.
+- The Nextcloud conflicted copy of `banned_words.py` is **gone** from `src/` this session
+  (only the canonical file remains) — the stale-file-edit hazard from 2026-09-02 no longer
+  applies, but keep re-reading files after writes if Nextcloud sync is active.
+
+### Git state
+Uncommitted on `master`: `src/shot_planner.py`, `src/multi_angle_orchestrator.py` modified,
+`tests/` new (3 batteries), `TODO.md`, `USER-FILES/07.TEMP/questions.md` (07.TEMP is
+gitignored). Commit awaits the owner's go per repo discipline. Nothing from the 2026-09-02
+session was left uncommitted — it landed as `cf4d18d`, `0830f8b`, `b258073`.
+
+### Still open — re-verified this session, all still true
+- `shot_planner.py` is at 248 lines, 2 under the soft limit — the next planner edit likely
+  forces a split (`_parse_plan` + prompts are the natural seam).
+- `retry_config.timeout` required but unread (Q9 deliberately left); `stream` and
+  `processing_options.*` required but never read — mandatory dead weight in every profile.
+- No client timeout on the OpenRouter client. The SDK constructor accepts `timeout_ms`;
+  `BaseOrchestrator._initialize_api_client()` does not pass it. A hung call still has
+  nothing to stop it.
+- `reporting.py:73` emits "See COST.md for detailed breakdown" — nothing writes COST.md.
+- `reporting.py:88` prints "Name: Unknown" when profile metadata lacks a `name` key.
+- `stats["failed"]` / `stats["errors"]` initialised but never incremented (vestigial by
+  design — failures raise + exit 1).
+- Preflight failures surface as raw tracebacks rather than a clean message + exit.
+- Live-run scene for future sessions: `/tmp/opencode/live_test/taken-2-fight-scene.md` with
+  its Backblaze image URL still HEAD-checking 200 `image/png` as of this session.
+
+---
+
+
 
 ### Feature Implementation — ✅ COMPLETE (verified live)
 
@@ -873,7 +989,8 @@ python3 -m src.main --cost-only        # OK ($0.0131 for 1 file x 17 angles)
 Multi-Angle MD Processor — transforms Markdown files into multi-angle reframed outputs using OpenRouter API.
 
 ## Architecture
-- **31 Python files** in `src/`, **3,369 total lines** (all ≤ 241 lines)
+- **33 Python files** in `src/`, **3,596 total lines** (longest 248 — `shot_planner.py`, split candidate)
+- **3 offline test batteries** in `tests/` (950 lines — `offline_battery.py` 44 checks, `failure_battery.py` 11, `feature_battery.py` 9; pure Python, monkeypatched API, run with `venv/bin/python tests/<name>.py`)
 - Entry point: `python -m src.main`
 - Config: `USER-FILES/01.CONFIG/openrouter_config.yaml` + `USER-FILES/03.PROFILES/*.yaml`
 - Input: `USER-FILES/04.INPUT/*.md` (raw Markdown with scene + image embeds, or pre-checked Markdown)
@@ -886,26 +1003,28 @@ Multi-Angle MD Processor — transforms Markdown files into multi-angle reframed
 - `profile_manager.py` — Profile loading/application
 - `cli_handler.py` — Thin router delegating to `ProfileCommand`, `CostCommand`, `ProcessCommand`
 - `multi_angle_orchestrator.py` — Single-pass orchestration (auto-planning + prompt generation) with atomic staging
-- `shot_planner.py` — Vision-based dynamic shot planning (lean JSON schema)
+- `shot_planner.py` — Vision-based dynamic shot planning with reason-fed retry on content rejections
 - `shot_plan.py` / `shot_sheet.py` — Shot and scene data models
+- `banned_words.py` — Banned abstract-noun / boilerplate scan for planner intents and generated prompts
+- `shot_generator.py` — Per-shot prompt generation loop (render → call → scan → retry → accumulate)
 - `assets.py` — Typed reference assets parser and models
 - `api_client.py` — OpenRouter API wrapper with token floor and usage extraction
 - `payload_builder.py` — Multi-part image/text user payload builder
 - `preflight.py` — Preflight image reachability and vision capability checks
 - `cost_calculator.py` — Token cost calculation
 
-## Codebase Health (as of 2026-08-31)
-- 0 syntax errors
-- 0 unused imports
-- 0 files over 250-line soft limit (longest is 241 lines)
+## Codebase Health (as of 2026-09-04)
+- 0 syntax errors (compileall clean on `src/` and `tests/`)
+- 0 files over 250-line soft limit (`shot_planner.py` 248 is the longest)
 - 0 files over 400-line hard limit
-- 0 TODO/FIXME comments
-- 0 logger.debug() statements
-- 0 print() statements in src/
-- 31 files in `src/`, 3,369 total lines
+- 0 TODO/FIXME comments, 0 print() statements in `src/` (batteries in `tests/` use `print` for reporting — allowed)
+- 33 files in `src/`, 3,596 total lines
 
 ## Testing
 ```bash
+venv/bin/python tests/offline_battery.py   # 44 checks: ban scan, shot_type, fences, coverage, few-shots
+venv/bin/python tests/failure_battery.py   # 11 checks: exit-1 guarantees, _FAILED residue, generator retry
+venv/bin/python tests/feature_battery.py   # 9 checks: planner retry contract (reason feed-back, usage sums)
 venv/bin/python -m src.main --list-profiles   # Lists profiles
 venv/bin/python -m src.main --cost-only        # Token & cost estimation
 venv/bin/python -m src.main --selftest         # Vision canary test

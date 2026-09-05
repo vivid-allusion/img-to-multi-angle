@@ -10,7 +10,7 @@ from loguru import logger
 from .base_orchestrator import BaseOrchestrator
 from .md_input_parser import parse_md_file
 from .user_message_template import load_user_message_template
-from .shot_generator import generate_shots
+from .shot_generator import accumulate_usage, generate_shots
 from .multi_angle_output_saver import save_angle_outputs
 from .data_models import ProcessingResult, UsageData
 from .exceptions import FileProcessingError
@@ -73,6 +73,7 @@ class MultiAngleOrchestrator(BaseOrchestrator):
                 cost=0.0,
             )
 
+        plan_usage: Dict[str, Any] = {}
         if parsed.checked_shots:
             entries_by_id = {e.id: e for e in parsed.shot_entries or []}
             shots_to_run: List[Tuple[ShotEntry, List[str]]] = []
@@ -87,13 +88,14 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         else:
             logger.info(f"Auto-planning shots for {short_name(md_path.name)}...")
             from .shot_planner import plan_file
-            sheet, entries = plan_file(parsed, md_path.name, client, self.config)
+            sheet, entries, plan_usage = plan_file(parsed, md_path.name, client, self.config)
             shots_to_run = [(e, e.grounds) for e in entries]
             logger.info(f"Generating {len(shots_to_run)} auto-planned shots for {short_name(md_path.name)}")
 
         angle_results, grounds_by_angle, labels_by_shot, total_usage = generate_shots(
             parsed, shots_to_run, md_path.name, client, self.config, self.um_template
         )
+        accumulate_usage(total_usage, plan_usage)
 
         saved_files = save_angle_outputs(
             output_dir,
