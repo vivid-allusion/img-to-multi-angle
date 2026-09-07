@@ -100,7 +100,7 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         """
         if parsed.all_checkbox_lines and not parsed.checked_shots:
             logger.warning(f"Skipping {md_path.name}: checkboxes present but none checked")
-            copy_raw_md_file(md_path, output_dir)
+            copy_raw_md_file(md_path, self._mirrored_dir(md_path, output_dir))
             return None
 
         shots_to_run, plan_usage = self._resolve_shots_to_run(parsed, md_path, client)
@@ -109,9 +109,23 @@ class MultiAngleOrchestrator(BaseOrchestrator):
         outputs: ShotOutputs = generate_shots(parsed, shots_to_run, md_path.name, ctx)
         accumulate_usage(outputs.usage, plan_usage)
 
-        save_angle_outputs(output_dir, md_path.stem, outputs, parsed.original_image)
+        save_angle_outputs(self._mirrored_dir(md_path, output_dir), md_path.stem, outputs, parsed.original_image)
 
         return outputs.usage.get("cost", 0.0)
+
+    def _mirrored_dir(self, md_path: Path, output_dir: Path) -> Path:
+        """Output parent for one file: input folder tree mirrored under output_dir.
+
+        Files under the input root keep their subfolder path, so generated
+        structure matches the input tree (e.g. input/archipelago/foo.md →
+        output/archipelago/foo/). Files at the input root land directly at
+        output/foo/ — the pre-mirror layout.
+        """
+        try:
+            rel = md_path.parent.relative_to(self.input_dir)
+        except ValueError:
+            rel = Path(".")
+        return output_dir / rel
 
     def generate_processing_reports(
         self, output_dir: Path, stats: Dict[str, Any], duration: float

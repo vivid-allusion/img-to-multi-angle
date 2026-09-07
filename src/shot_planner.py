@@ -77,8 +77,9 @@ def _parse_plan(data: Any, parsed: ParsedMdInput, filename: str) -> Tuple[ShotSh
     except (KeyError, TypeError, ValueError) as e:
         raise PlanRejected(f"plan call returned an invalid shot sheet: {e}") from e
 
-    declared_ids = {a.id for a in parsed.assets} if parsed.assets is not None else set()
-    _check_subject_assets(sheet, declared_ids)
+    if parsed.assets is not None:
+        declared_ids = {a.id for a in parsed.assets}
+        _check_subject_assets(sheet, declared_ids)
 
     roster = {s.id for s in sheet.subjects}
     asset_check = declared_ids if parsed.assets is not None else None
